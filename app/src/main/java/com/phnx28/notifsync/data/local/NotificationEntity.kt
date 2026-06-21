@@ -2,9 +2,17 @@ package com.phnx28.notifsync.data.local
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "notifications")
+@Entity(
+    tableName = "notifications",
+    indices = [
+        Index("status"),
+        Index("timestamp"),
+        Index("archived_at")
+    ]
+)
 data class NotificationEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "app_name") val appName: String,

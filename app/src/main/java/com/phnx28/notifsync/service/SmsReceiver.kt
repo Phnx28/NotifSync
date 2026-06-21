@@ -24,7 +24,7 @@ class SmsReceiver : BroadcastReceiver() {
                     val timestamp = smsMessage.timestampMillis
 
                     val event = NotificationEvent(
-                        app_name = "SMS",
+                        appName = "SMS",
                         sender = sender,
                         title = sender,
                         body = body,
@@ -45,6 +45,7 @@ class SmsReceiver : BroadcastReceiver() {
     private fun broadcastEvent(context: Context?, json: String) {
         val intent = Intent(NotificationCaptureService.ACTION_BROADCAST_EVENT).apply {
             putExtra(NotificationCaptureService.EXTRA_EVENT_JSON, json)
+            `package` = context?.packageName
         }
         context?.sendBroadcast(intent)
     }

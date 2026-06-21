@@ -74,6 +74,15 @@ class SenderFragment : Fragment() {
                 binding.tvArchivedCount.text = count.toString()
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            SenderForegroundService.connectionCountFlow.collectLatest { count ->
+                binding.tvConnectedReceivers.text = count.toString()
+                val ip = SenderForegroundService.getLocalIpAddress() ?: "Unknown IP"
+                binding.tvServerAddress.text = "ws://$ip:${com.phnx28.notifsync.Constants.DEFAULT_PORT}"
+                binding.tvPairingPin.text = SenderForegroundService.activePin ?: "----"
+            }
+        }
     }
 
     override fun onDestroyView() {

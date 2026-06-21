@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import com.google.gson.Gson
+import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.MainActivity
 import com.phnx28.notifsync.NotifSyncApp
 import com.phnx28.notifsync.R
@@ -18,8 +19,10 @@ import com.phnx28.notifsync.network.WebSocketClient
 import com.phnx28.notifsync.util.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class ReceiverForegroundService : Service() {
@@ -32,6 +35,7 @@ class ReceiverForegroundService : Service() {
     private var notificationCounter = 0
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var connectionObserverJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,13 +48,20 @@ class ReceiverForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CONNECT -> {
-                val ip = intent.getStringExtra(EXTRA_IP_ADDRESS)
-                val port = intent.getIntExtra(EXTRA_PORT, 8765)
+                // Prefer explicit IP from intent, fall back to persisted IP for restarts
+                val ip = intent.getStringExtra(EXTRA_IP_ADDRESS) ?: getPersistedIp()
+                val port = intent.getIntExtra(EXTRA_PORT, Constants.DEFAULT_PORT)
+                val pin = intent.getStringExtra(EXTRA_PIN) ?: getPersistedPin()
                 if (ip != null) {
-                    connectToServer(ip, port)
+                    persistConnection(ip, port, pin)
+                    connectToServer(ip, port, pin)
+                } else {
+                    Log.w(TAG, "No IP available for connection, stopping")
+                    stopSelf()
                 }
             }
             ACTION_DISCONNECT -> {
+                clearPersistedConnection()
                 disconnect()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -61,6 +72,7 @@ class ReceiverForegroundService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        // Restart with ACTION_CONNECT — the IP will be read from SharedPreferences
         val restartIntent = Intent(this, ReceiverForegroundService::class.java).apply {
             action = ACTION_CONNECT
         }
@@ -79,12 +91,17 @@ class ReceiverForegroundService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         releaseWakeLocks()
-        webSocketClient?.disconnect()
+        connectionObserverJob?.cancel()
+        webSocketClient?.shutdown()
         webSocketClient = null
         serviceScope.cancel()
     }
 
-    private fun connectToServer(ip: String, port: Int) {
+    private fun connectToServer(ip: String, port: Int, pin: String?) {
+        // Clean up previous connection if any
+        connectionObserverJob?.cancel()
+        webSocketClient?.shutdown()
+
         acquireWakeLocks()
 
         webSocketClient = WebSocketClient(
@@ -95,18 +112,23 @@ class ReceiverForegroundService : Service() {
             }
         )
 
-        webSocketClient?.isConnected?.observeForever { connected ->
-            updateNotification(connected)
+        // Collect StateFlow in a cancellable coroutine — no observer leak
+        connectionObserverJob = serviceScope.launch(Dispatchers.Main) {
+            webSocketClient?.isConnected?.collectLatest { connected ->
+                updateNotification(connected)
+            }
         }
 
         val url = "ws://$ip:$port"
-        webSocketClient?.connect(url)
+        webSocketClient?.connect(url, pin)
         Log.d(TAG, "Connecting to $url")
     }
 
     private fun disconnect() {
         releaseWakeLocks()
-        webSocketClient?.disconnect()
+        connectionObserverJob?.cancel()
+        connectionObserverJob = null
+        webSocketClient?.shutdown()
         webSocketClient = null
     }
 
@@ -116,7 +138,7 @@ class ReceiverForegroundService : Service() {
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "NotifSync:ReceiverWakeLock"
-            ).apply { acquire(60 * 60 * 1000L) }
+            ).apply { acquire() }
         }
         if (wifiLock == null) {
             val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -134,6 +156,41 @@ class ReceiverForegroundService : Service() {
         wifiLock = null
     }
 
+    // --- Connection persistence for service restarts ---
+
+    private fun persistConnection(ip: String, port: Int, pin: String?) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(KEY_LAST_IP, ip)
+            .putInt(KEY_LAST_PORT, port)
+            .putString(KEY_LAST_PIN, pin)
+            .apply()
+    }
+
+    private fun getPersistedIp(): String? {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_LAST_IP, null)
+    }
+
+    private fun getPersistedPort(): Int {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getInt(KEY_LAST_PORT, Constants.DEFAULT_PORT)
+    }
+
+    private fun getPersistedPin(): String? {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_LAST_PIN, null)
+    }
+
+    private fun clearPersistedConnection() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .remove(KEY_LAST_IP)
+            .remove(KEY_LAST_PORT)
+            .remove(KEY_LAST_PIN)
+            .apply()
+    }
+
+    // -------------------------------------------------
+
     private suspend fun handleReceivedEvent(event: NotificationEvent) {
         try {
             val app = application as NotifSyncApp
@@ -141,7 +198,7 @@ class ReceiverForegroundService : Service() {
 
             NotificationHelper.postMirroredNotification(
                 context = this,
-                appName = event.app_name,
+                appName = event.appName,
                 sender = event.sender,
                 title = event.title,
                 body = event.body,
@@ -173,12 +230,19 @@ class ReceiverForegroundService : Service() {
         const val ACTION_DISCONNECT = "com.phnx28.notifsync.DISCONNECT"
         const val EXTRA_IP_ADDRESS = "ip_address"
         const val EXTRA_PORT = "port"
+        const val EXTRA_PIN = "pin"
 
-        fun connect(context: Context, ip: String, port: Int = 8765) {
+        private const val PREFS_NAME = "receiver_connection"
+        private const val KEY_LAST_IP = "last_ip"
+        private const val KEY_LAST_PORT = "last_port"
+        private const val KEY_LAST_PIN = "last_pin"
+
+        fun connect(context: Context, ip: String, port: Int = Constants.DEFAULT_PORT, pin: String) {
             val intent = Intent(context, ReceiverForegroundService::class.java).apply {
                 action = ACTION_CONNECT
                 putExtra(EXTRA_IP_ADDRESS, ip)
                 putExtra(EXTRA_PORT, port)
+                putExtra(EXTRA_PIN, pin)
             }
             context.startForegroundService(intent)
         }

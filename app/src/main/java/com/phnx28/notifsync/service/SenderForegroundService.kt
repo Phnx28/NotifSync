@@ -14,6 +14,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
+import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.NotifSyncApp
 import com.phnx28.notifsync.R
 import com.phnx28.notifsync.data.model.NotificationEvent
@@ -86,19 +87,42 @@ class SenderForegroundService : Service() {
         unregisterReceiver(eventReceiver)
         webSocketServer?.stopServer()
         nsdHelper?.tearDown()
+        activePin = null
+        connectionCountFlow.value = 0
         serviceScope.cancel()
     }
 
     private fun startWebSocketServer() {
-        webSocketServer = WebSocketServer(port = 8765).apply {
+        val pin = (1000..9999).random().toString()
+        activePin = pin
+        connectionCountFlow.value = 0
+
+        webSocketServer = WebSocketServer(
+            port = Constants.DEFAULT_PORT,
+            pin = pin,
+            onConnectionChanged = { count ->
+                connectionCountFlow.value = count
+                updateForegroundNotification(count)
+            }
+        ).apply {
             startServer()
         }
 
         nsdHelper = NsdHelper(this).apply {
-            registerService(8765)
+            registerService(Constants.DEFAULT_PORT)
         }
 
-        Log.d(TAG, "WebSocket server started on port 8765")
+        Log.d(TAG, "WebSocket server started on port ${Constants.DEFAULT_PORT} with PIN $pin")
+        updateForegroundNotification(0)
+    }
+
+    private fun updateForegroundNotification(count: Int) {
+        val pinText = activePin?.let { " | PIN: $it" } ?: ""
+        val notification = NotificationHelper.buildSenderNotification(this)
+            .setContentText("Running on port ${Constants.DEFAULT_PORT} | Connected: $count$pinText")
+            .build()
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun acquireWakeLocks() {
@@ -107,7 +131,7 @@ class SenderForegroundService : Service() {
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "NotifSync:SenderWakeLock"
-            ).apply { acquire(60 * 60 * 1000L) }
+            ).apply { acquire() }
         }
         if (wifiLock == null) {
             val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -136,6 +160,31 @@ class SenderForegroundService : Service() {
     }
 
     companion object {
+        @Volatile
+        var activePin: String? = null
+            private set
+
+        val connectionCountFlow = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+        fun getLocalIpAddress(): String? {
+            try {
+                val interfaces = java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+                for (intf in interfaces) {
+                    if (intf.isUp && !intf.isLoopback) {
+                        val addrs = java.util.Collections.list(intf.inetAddresses)
+                        for (addr in addrs) {
+                            if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                                return addr.hostAddress
+                            }
+                        }
+                    }
+                }
+            } catch (ex: Exception) {
+                Log.e("SenderFGService", "Error getting IP", ex)
+            }
+            return null
+        }
+
         fun start(context: Context) {
             val intent = Intent(context, SenderForegroundService::class.java)
             context.startForegroundService(intent)

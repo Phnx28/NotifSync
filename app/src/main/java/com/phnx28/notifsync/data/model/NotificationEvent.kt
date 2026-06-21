@@ -1,7 +1,9 @@
 package com.phnx28.notifsync.data.model
 
+import com.google.gson.annotations.SerializedName
+
 data class NotificationEvent(
-    val app_name: String,
+    @SerializedName("app_name") val appName: String,
     val sender: String,
     val title: String,
     val body: String,

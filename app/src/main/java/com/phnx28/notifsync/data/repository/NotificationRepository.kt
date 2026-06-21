@@ -21,7 +21,7 @@ class NotificationRepository(private val database: AppDatabase) {
 
     suspend fun insertEvent(event: NotificationEvent): Long {
         val entity = NotificationEntity(
-            appName = event.app_name,
+            appName = event.appName,
             sender = event.sender,
             title = event.title,
             body = event.body.take(5000),

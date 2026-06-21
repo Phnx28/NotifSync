@@ -30,10 +30,25 @@ class NotificationCaptureService : NotificationListenerService() {
         Log.d(TAG, "NotificationCaptureService destroyed")
     }
 
+    // Track recently sent events to deduplicate rapid updates
+    private val recentEvents = LinkedHashMap<String, Long>(100, 0.75f, true)
+    private val DEDUP_WINDOW_MS = 2000L
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn?.let { notification ->
             try {
                 val packageName = notification.packageName
+
+                // Skip our own notifications to prevent loops
+                if (packageName == this.packageName) return
+
+                // Skip group summary notifications (e.g., "3 new messages")
+                val flags = notification.notification.flags
+                if (flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+
+                // Skip ongoing notifications (media players, navigation, downloads)
+                if (flags and Notification.FLAG_ONGOING_EVENT != 0) return
+
                 val appLabel = getApplicationLabel(packageName)
                 val extras = notification.notification.extras
 
@@ -44,8 +59,21 @@ class NotificationCaptureService : NotificationListenerService() {
 
                 if (displayText.isBlank() && title.isBlank()) return
 
+                // Deduplicate rapid updates with same content from same app
+                val dedupKey = "$packageName|$title|$displayText"
+                val now = System.currentTimeMillis()
+                val lastSent = recentEvents[dedupKey]
+                if (lastSent != null && now - lastSent < DEDUP_WINDOW_MS) return
+                recentEvents[dedupKey] = now
+
+                // Prune old entries to prevent memory growth
+                if (recentEvents.size > 200) {
+                    val cutoff = now - DEDUP_WINDOW_MS * 5
+                    recentEvents.entries.removeAll { it.value < cutoff }
+                }
+
                 val event = NotificationEvent(
-                    app_name = appLabel,
+                    appName = appLabel,
                     sender = "",
                     title = title,
                     body = displayText,
@@ -69,6 +97,7 @@ class NotificationCaptureService : NotificationListenerService() {
     private fun broadcastEvent(json: String) {
         val intent = Intent(ACTION_BROADCAST_EVENT).apply {
             putExtra(EXTRA_EVENT_JSON, json)
+            `package` = packageName
         }
         sendBroadcast(intent)
     }

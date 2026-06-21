@@ -13,6 +13,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.MainScope
+
 
 object UpdateHelper {
 
@@ -39,47 +44,47 @@ object UpdateHelper {
         @SerializedName("browser_download_url") val downloadUrl: String
     )
 
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+
     fun checkForUpdate(context: Context, view: View, currentVersion: String) {
         view.showNeutralSnackbar("Checking for updates…")
 
-        Thread {
+        scope.launch {
             try {
                 val request = Request.Builder()
                     .url(API_URL)
                     .header("Accept", "application/vnd.github.v3+json")
                     .build()
 
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    response.close()
-                    postError(view, "Failed to check updates (${response.code})")
-                    return@Thread
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        postError(view, "Failed to check updates (${response.code})")
+                        return@launch
+                    }
+
+                    val body = response.body?.string() ?: ""
+                    val release = gson.fromJson(body, Release::class.java)
+
+                    val latestVersion = release.tagName.removePrefix("v")
+                    if (compareVersions(latestVersion, currentVersion) <= 0) {
+                        postSuccess(view, "You're up to date (v$currentVersion)")
+                        return@launch
+                    }
+
+                    postInfo(view, "New version available: v$latestVersion")
+
+                    val apkAsset = release.assets.firstOrNull { it.name.contains(APK_NAME) || it.name.endsWith(".apk") }
+                    if (apkAsset == null) {
+                        postError(view, "No APK found in release")
+                        return@launch
+                    }
+
+                    downloadAndInstall(context, view, apkAsset.downloadUrl, latestVersion)
                 }
-
-                val body = response.body?.string() ?: ""
-                response.close()
-                val release = gson.fromJson(body, Release::class.java)
-
-                val latestVersion = release.tagName.removePrefix("v")
-                if (compareVersions(latestVersion, currentVersion) <= 0) {
-                    postSuccess(view, "You're up to date (v$currentVersion)")
-                    return@Thread
-                }
-
-                postInfo(view, "New version available: v$latestVersion")
-
-                val apkAsset = release.assets.firstOrNull { it.name.contains(APK_NAME) || it.name.endsWith(".apk") }
-                if (apkAsset == null) {
-                    postError(view, "No APK found in release")
-                    return@Thread
-                }
-
-                downloadAndInstall(context, view, apkAsset.downloadUrl, latestVersion)
-
             } catch (e: Exception) {
                 postError(view, "Update check failed: ${e.message}")
             }
-        }.start()
+        }
     }
 
     private fun downloadAndInstall(context: Context, view: View, url: String, version: String) {
@@ -87,46 +92,45 @@ object UpdateHelper {
 
         try {
             val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                response.close()
-                postError(view, "Download failed (${response.code})")
-                return
-            }
-
-            val apkFile = File(context.cacheDir, "update-v$version.apk")
-            response.body?.byteStream()?.use { input ->
-                apkFile.outputStream().use { output ->
-                    input.copyTo(output)
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    postError(view, "Download failed (${response.code})")
+                    return
                 }
-            }
-            response.close()
 
-            postSuccess(view, "Download complete. Installing…")
-
-            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    apkFile
-                )
-                Intent(Intent.ACTION_INSTALL_PACKAGE, uri).apply {
-                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                val apkFile = File(context.cacheDir, "update-v$version.apk")
+                response.body?.byteStream()?.use { input ->
+                    apkFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
                 }
-            } else {
-                Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(
-                        Uri.fromFile(apkFile),
-                        "application/vnd.android.package-archive"
+
+                postSuccess(view, "Download complete. Installing…")
+
+                val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        apkFile
                     )
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    Intent(Intent.ACTION_INSTALL_PACKAGE, uri).apply {
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    }
+                } else {
+                    Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(
+                            Uri.fromFile(apkFile),
+                            "application/vnd.android.package-archive"
+                        )
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                }
+
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                kotlinx.coroutines.MainScope().launch {
+                    context.startActivity(intent)
                 }
             }
-
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-
         } catch (e: Exception) {
             postError(view, "Install failed: ${e.message}")
         }

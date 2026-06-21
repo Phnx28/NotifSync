@@ -1,10 +1,18 @@
 package com.phnx28.notifsync.network
 
 import android.util.Log
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import com.google.gson.Gson
 import com.phnx28.notifsync.data.model.NotificationEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -21,18 +29,32 @@ class WebSocketClient(
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
 
+    @Volatile
     private var webSocket: WebSocket? = null
     private val gson = Gson()
     private val TAG = "WebSocketClient"
+
+    @Volatile
     private var serverUrl: String? = null
+
+    @Volatile
     private var shouldReconnect = false
+
+    @Volatile
     private var reconnectAttempt = 0
 
-    private val _isConnected = MutableLiveData(false)
-    val isConnected: LiveData<Boolean> = _isConnected
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var reconnectJob: Job? = null
 
-    fun connect(url: String) {
+    @Volatile
+    private var pin: String? = null
+
+    private val _isConnected = MutableStateFlow(false)
+    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    fun connect(url: String, pin: String? = null) {
         serverUrl = url
+        this.pin = pin
         shouldReconnect = true
         reconnectAttempt = 0
         doConnect(url)
@@ -42,12 +64,15 @@ class WebSocketClient(
         try {
             val request = Request.Builder()
                 .url(url)
+                .apply {
+                    pin?.let { header("X-Pairing-PIN", it) }
+                }
                 .build()
             webSocket = client.newWebSocket(request, this)
             Log.d(TAG, "Connecting to $url")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initiate connection to $url", e)
-            _isConnected.postValue(false)
+            _isConnected.value = false
             scheduleReconnect()
         }
     }
@@ -55,7 +80,7 @@ class WebSocketClient(
     override fun onOpen(webSocket: WebSocket, response: Response) {
         Log.d(TAG, "Connected to server")
         reconnectAttempt = 0
-        _isConnected.postValue(true)
+        _isConnected.value = true
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
@@ -69,12 +94,12 @@ class WebSocketClient(
 
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
         webSocket.close(1000, null)
-        _isConnected.postValue(false)
+        _isConnected.value = false
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
         Log.d(TAG, "Disconnected: $reason")
-        _isConnected.postValue(false)
+        _isConnected.value = false
         if (shouldReconnect) {
             scheduleReconnect()
         }
@@ -82,7 +107,7 @@ class WebSocketClient(
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
         Log.e(TAG, "Connection failed: ${t.message}")
-        _isConnected.postValue(false)
+        _isConnected.value = false
         if (shouldReconnect) {
             scheduleReconnect()
         }
@@ -94,24 +119,28 @@ class WebSocketClient(
         val delayMs = (1000L * reconnectAttempt.coerceAtMost(30)).coerceAtMost(30000L)
         Log.d(TAG, "Reconnecting in ${delayMs}ms (attempt $reconnectAttempt)")
 
-        Thread {
-            try {
-                Thread.sleep(delayMs)
-                if (shouldReconnect) {
-                    val url = serverUrl ?: return@Thread
-                    doConnect(url)
-                }
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            delay(delayMs)
+            if (shouldReconnect) {
+                val url = serverUrl ?: return@launch
+                doConnect(url)
             }
-        }.start()
+        }
     }
 
     fun disconnect() {
         shouldReconnect = false
+        reconnectJob?.cancel()
+        reconnectJob = null
         webSocket?.close(1000, "Client disconnecting")
         webSocket = null
-        _isConnected.postValue(false)
+        _isConnected.value = false
+    }
+
+    fun shutdown() {
+        disconnect()
+        scope.cancel()
     }
 
     fun isAlive(): Boolean = webSocket != null

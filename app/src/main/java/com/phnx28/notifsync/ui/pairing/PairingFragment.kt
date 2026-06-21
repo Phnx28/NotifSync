@@ -49,7 +49,7 @@ class PairingFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         deviceAdapter = DeviceAdapter { device ->
-            connectToSender(device.host.hostAddress ?: return@DeviceAdapter)
+            promptForPinAndConnect(device.host.hostAddress ?: return@DeviceAdapter)
         }
 
         binding.rvDevices.layoutManager = LinearLayoutManager(context)
@@ -69,7 +69,7 @@ class PairingFragment : Fragment() {
                 binding.etIpAddress.error = "Enter a valid IP address"
                 return@setOnClickListener
             }
-            connectToSender(ip)
+            promptForPinAndConnect(ip)
         }
 
         startDiscovery()
@@ -142,9 +142,48 @@ class PairingFragment : Fragment() {
         }
     }
 
-    private fun connectToSender(ip: String) {
+    private fun promptForPinAndConnect(ip: String) {
+        val context = requireContext()
+        val input = com.google.android.material.textfield.TextInputEditText(context).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = "e.g. 1234"
+            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
+        }
+
+        val container = android.widget.FrameLayout(context).apply {
+            val params = android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                val margin = (24 * resources.displayMetrics.density).toInt()
+                leftMargin = margin
+                rightMargin = margin
+                topMargin = (8 * resources.displayMetrics.density).toInt()
+                bottomMargin = (8 * resources.displayMetrics.density).toInt()
+            }
+            input.layoutParams = params
+            addView(input)
+        }
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle("Enter Pairing PIN")
+            .setMessage("Please enter the pairing PIN displayed on the Sender device.")
+            .setView(container)
+            .setPositiveButton("Connect") { _, _ ->
+                val pin = input.text.toString().trim()
+                if (pin.isNotEmpty()) {
+                    connectToSender(ip, pin)
+                } else {
+                    showErrorSnackbar("PIN is required to connect")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun connectToSender(ip: String, pin: String) {
         showSuccessSnackbar("Connecting to $ip…")
-        ReceiverForegroundService.connect(requireContext(), ip)
+        ReceiverForegroundService.connect(requireContext(), ip, pin = pin)
         findNavController().navigate(R.id.action_pairing_to_receiver)
     }
 
