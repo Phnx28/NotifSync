@@ -10,9 +10,11 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
+import com.phnx28.notifsync.BuildConfig
 import com.phnx28.notifsync.R
 import com.phnx28.notifsync.databinding.FragmentHomeBinding
 import com.phnx28.notifsync.util.PermissionsHelper
+import com.phnx28.notifsync.util.UpdateHelper
 
 class HomeFragment : Fragment() {
 
@@ -30,6 +32,12 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        binding.tvVersion.text = "v${BuildConfig.VERSION_NAME}"
+        binding.tvVersion.setOnLongClickListener {
+            UpdateHelper.checkForUpdate(requireContext(), it, BuildConfig.VERSION_NAME)
+            true
+        }
 
         checkBatteryOptimization()
         checkNotificationListenerPermission()
