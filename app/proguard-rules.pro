@@ -1,0 +1,2 @@
+-keep class com.phnx28.notifsync.data.model.** { *; }
+-keep class com.phnx28.notifsync.data.local.** { *; }

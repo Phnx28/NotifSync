@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="green">#22c55e</color>
+    <color name="green_dim">#262217</color>
+    <color name="green_border">#4D22c55e</color>
+    <color name="red">#ef4444</color>
+    <color name="red_dim">#1AEF4444</color>
+    <color name="amber">#f59e0b</color>
+    <color name="amber_dim">#1FF59E0B</color>
+    <color name="blue">#3b82f6</color>
+    <color name="blue_dim">#1A3B82F6</color>
+    <color name="bg">#111114</color>
+    <color name="surface">#1C1C1F</color>
+    <color name="surface2">#252528</color>
+    <color name="surface3">#2E2E32</color>
+    <color name="text_primary">#F0F0F0</color>
+    <color name="text_secondary">#888890</color>
+    <color name="divider">#14FFFFFF</color>
+    <color name="divider2">#21FFFFFF</color>
+    <color name="white">#FFFFFF</color>
+</resources>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.NotifSync" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/green</item>
+        <item name="colorPrimaryContainer">@color/green_dim</item>
+        <item name="colorOnPrimary">@color/bg</item>
+        <item name="colorSecondary">@color/blue</item>
+        <item name="colorSecondaryContainer">@color/blue_dim</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceVariant">@color/surface2</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorError">@color/red</item>
+        <item name="colorErrorContainer">@color/red_dim</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+
+    <style name="TabTextStyle" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.NotifSync.TabLayout" parent="Widget.Material3.TabLayout">
+        <item name="tabBackground">@color/surface2</item>
+        <item name="tabRippleColor">@android:color/transparent</item>
+        <item name="tabMode">fixed</item>
+        <item name="tabGravity">fill</item>
+        <item name="tabIndicator">@null</item>
+        <item name="tabTextAppearance">@style/TabTextStyle</item>
+    </style>
+
+</resources>

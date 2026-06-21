@@ -1,0 +1,350 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#111114;
+  --surface:#1c1c1f;
+  --surface2:#252528;
+  --surface3:#2e2e32;
+  --green:#22c55e;
+  --green-dim:rgba(34,197,94,0.15);
+  --green-border:rgba(34,197,94,0.3);
+  --text:#f0f0f0;
+  --muted:#888890;
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.13);
+  --red:#ef4444;
+  --amber:#f59e0b;
+  --blue:#3b82f6;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;padding:16px 0 32px;}
+.frame{width:360px;min-height:680px;background:var(--bg);border-radius:32px;border:1px solid var(--border2);overflow:hidden;position:relative;box-shadow:0 0 0 8px #0a0a0c,0 0 0 9px var(--border2);}
+.statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px 6px;font-size:12px;font-weight:600;color:var(--text);}
+.statusbar .icons{display:flex;gap:5px;align-items:center;}
+.screen{display:none;flex-direction:column;min-height:636px;}
+.screen.active{display:flex;}
+
+.logo-row{display:flex;align-items:center;gap:10px;padding:20px 20px 4px;}
+.logo-icon{width:36px;height:36px;background:var(--green);border-radius:10px;display:flex;align-items:center;justify-content:center;}
+.logo-icon svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;}
+.app-name{font-size:18px;font-weight:700;letter-spacing:-0.3px;}
+
+.screen-title{font-size:22px;font-weight:700;padding:0 20px;letter-spacing:-0.5px;}
+.screen-sub{font-size:13px;color:var(--muted);padding:4px 20px 0;}
+
+.mode-cards{display:flex;flex-direction:column;gap:12px;padding:24px 20px;}
+.mode-card{background:var(--surface);border-radius:16px;border:1px solid var(--border);padding:20px;cursor:pointer;transition:border-color .18s,background .18s;}
+.mode-card:hover,.mode-card:active{border-color:var(--green-border);background:var(--surface2);}
+.mode-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;}
+.mode-icon.sender{background:rgba(59,130,246,0.15);}
+.mode-icon.receiver{background:var(--green-dim);}
+.mode-icon svg{width:22px;height:22px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.mode-icon.sender svg{stroke:#3b82f6;}
+.mode-icon.receiver svg{stroke:var(--green);}
+.mode-card h3{font-size:16px;font-weight:600;margin-bottom:4px;}
+.mode-card p{font-size:13px;color:var(--muted);line-height:1.5;}
+.mode-card .arrow{float:right;margin-top:-36px;color:var(--muted);}
+
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:99px;padding:4px 10px;}
+.pill.connected{background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);}
+.pill.waiting{background:rgba(245,158,11,0.12);color:var(--amber);border:1px solid rgba(245,158,11,0.25);}
+.pill.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;}
+
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 20px 0;}
+.stat-card{background:var(--surface);border-radius:12px;padding:14px 14px 12px;border:1px solid var(--border);}
+.stat-label{font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px;}
+.stat-value{font-size:22px;font-weight:700;letter-spacing:-0.5px;}
+.stat-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+
+.section-label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;padding:16px 20px 8px;}
+.event-list{padding:0 20px;display:flex;flex-direction:column;gap:8px;}
+.event-item{background:var(--surface);border-radius:12px;border:1px solid var(--border);padding:12px 14px;position:relative;}
+.event-item .e-row{display:flex;justify-content:space-between;align-items:flex-start;}
+.event-item .e-app{font-size:11px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.5px;}
+.event-item .e-time{font-size:11px;color:var(--muted);}
+.event-item .e-title{font-size:13px;font-weight:600;margin:4px 0 2px;}
+.event-item .e-body{font-size:12px;color:var(--muted);line-height:1.4;}
+.event-item .sms-badge{display:inline-block;font-size:10px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border-radius:4px;padding:1px 6px;margin-left:6px;}
+
+.tabs-bar{display:flex;background:var(--surface2);border-radius:12px;margin:16px 20px 0;padding:3px;}
+.tab-btn{flex:1;font-size:13px;font-weight:600;padding:7px 0;border-radius:9px;border:none;background:none;color:var(--muted);cursor:pointer;transition:all .18s;}
+.tab-btn.active{background:var(--surface3);color:var(--text);}
+.tab-count{display:inline-block;background:var(--green-dim);color:var(--green);font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;margin-left:4px;line-height:16px;}
+.tab-count.gray{background:var(--surface3);color:var(--muted);}
+
+.notif-list{flex:1;overflow-y:auto;padding:10px 20px 20px;display:flex;flex-direction:column;gap:8px;}
+.notif-item{background:var(--surface);border-radius:14px;border:1px solid var(--border);padding:14px;cursor:pointer;transition:border-color .15s;}
+.notif-item:hover{border-color:var(--border2);}
+.notif-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.app-chip{display:flex;align-items:center;gap:6px;}
+.app-dot{width:8px;height:8px;border-radius:50%;}
+.app-dot.whatsapp{background:#25D366;}
+.app-dot.telegram{background:#229ED9;}
+.app-dot.gmail{background:#EA4335;}
+.app-dot.sms{background:#3b82f6;}
+.app-dot.slack{background:#E01E5A;}
+.app-name-chip{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.notif-time{font-size:11px;color:var(--muted);}
+.notif-sender{font-size:13px;font-weight:700;margin-bottom:2px;}
+.notif-body{font-size:12px;color:var(--muted);line-height:1.45;}
+.notif-footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
+.dismiss-btn{font-size:11px;font-weight:600;color:var(--red);background:rgba(239,68,68,.1);border:none;border-radius:8px;padding:5px 10px;cursor:pointer;}
+.restore-btn{font-size:11px;font-weight:600;color:var(--green);background:var(--green-dim);border:none;border-radius:8px;padding:5px 10px;cursor:pointer;}
+.days-badge{font-size:11px;color:var(--muted);}
+.archived-label{font-size:11px;color:var(--muted);}
+
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);padding:40px 20px;}
+.empty-state svg{opacity:.35;}
+.empty-state p{font-size:13px;text-align:center;}
+
+.back-row{display:flex;align-items:center;gap:10px;padding:10px 20px 0;}
+.back-btn{background:none;border:none;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;}
+.back-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;}
+
+.conn-box{margin:16px 20px 0;background:var(--surface);border-radius:14px;border:1px solid var(--green-border);padding:14px 16px;}
+.conn-box .c-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.conn-label{font-size:12px;color:var(--muted);}
+.conn-value{font-size:13px;font-weight:600;}
+.progress-bar{width:100%;height:3px;background:var(--border);border-radius:2px;margin-top:10px;}
+.progress-fill{height:100%;border-radius:2px;background:var(--green);animation:pulse-w 2s ease-in-out infinite;}
+@keyframes pulse-w{0%,100%{opacity:.6}50%{opacity:1}}
+
+.btn-main{display:block;width:calc(100% - 40px);margin:16px 20px;background:var(--green);color:#0a1a0e;font-size:15px;font-weight:700;border:none;border-radius:14px;padding:15px;cursor:pointer;text-align:center;transition:opacity .15s;}
+.btn-main:hover{opacity:.9;}
+.btn-main.outline{background:none;color:var(--text);border:1px solid var(--border2);}
+
+.spacer{flex:1;}
+.hr{height:1px;background:var(--border);margin:0 20px;}
+
+.liveblip{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:blip 1.2s ease-in-out infinite;}
+@keyframes blip{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+.fade-in{animation:fadein .25s ease;}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+
+<div class="frame" role="main" aria-label="MirrorLink app prototype">
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <svg width="15" height="12" viewBox="0 0 15 12" fill="currentColor"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4" y="2" width="3" height="10" rx="1"/><rect x="8" y="1" width="3" height="11" rx="1"/><rect x="12" y="0" width="3" height="12" rx="1" opacity=".3"/></svg>
+      <svg width="15" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.4C5.6 2.4 3.4 3.4 1.8 5L0 3.2C2.1 1.2 4.9 0 8 0s5.9 1.2 8 3.2L14.2 5C12.6 3.4 10.4 2.4 8 2.4z" opacity=".4"/><path d="M8 5.8C6.5 5.8 5.1 6.4 4.1 7.4L2.3 5.6C3.8 4.2 5.8 3.4 8 3.4s4.2.8 5.7 2.2L12 7.4C11 6.4 9.5 5.8 8 5.8z" opacity=".7"/><path d="M8 9.2c-.9 0-1.7.4-2.3.9L8 12l2.3-1.9C9.7 9.6 8.9 9.2 8 9.2z"/></svg>
+      <svg width="24" height="12" viewBox="0 0 24 12" fill="none"><rect x="0" y="1" width="21" height="10" rx="3" stroke="currentColor" stroke-opacity=".4" stroke-width="1"/><rect x="1.5" y="2.5" width="15" height="7" rx="1.5" fill="currentColor"/><path d="M22 4.5v3A1.5 1.5 0 0 0 22 4.5z" fill="currentColor" opacity=".4"/></svg>
+    </div>
+  </div>
+
+  <!-- SCREEN: HOME / MODE SELECT -->
+  <div id="screen-home" class="screen active">
+    <div class="logo-row">
+      <div class="logo-icon">
+        <svg viewBox="0 0 20 20"><polyline points="4,8 10,2 16,8"/><polyline points="4,14 10,20 16,14" opacity=".5"/><line x1="10" y1="2" x2="10" y2="18"/></svg>
+      </div>
+      <span class="app-name">MirrorLink</span>
+    </div>
+    <div style="padding:24px 20px 8px;">
+      <div class="screen-title">Choose your<br>device role</div>
+      <div class="screen-sub" style="padding:6px 0 0;">Both devices run the same app.</div>
+    </div>
+    <div class="mode-cards">
+      <div class="mode-card" onclick="go('screen-sender')">
+        <div class="mode-icon sender">
+          <svg viewBox="0 0 22 22"><circle cx="11" cy="11" r="4"/><path d="M11 2v3M11 17v3M2 11h3M17 11h3M4.9 4.9l2.1 2.1M15 15l2.1 2.1M4.9 17.1l2.1-2.1M15 7l2.1-2.1"/></svg>
+        </div>
+        <h3>Sender Mode</h3>
+        <p>Device A — captures all notifications and SMS and broadcasts them to the receiver over Wi-Fi.</p>
+        <div style="margin-top:12px;"><span class="pill waiting dot">Device A</span></div>
+      </div>
+      <div class="mode-card" onclick="go('screen-receiver')">
+        <div class="mode-icon receiver">
+          <svg viewBox="0 0 22 22"><rect x="3" y="3" width="16" height="16" rx="3"/><line x1="7" y1="9" x2="15" y2="9"/><line x1="7" y1="13" x2="12" y2="13"/></svg>
+        </div>
+        <h3>Receiver Mode</h3>
+        <p>Device B — listens on LAN, posts system notifications and logs everything to the Active History.</p>
+        <div style="margin-top:12px;"><span class="pill connected dot">Device B</span></div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div style="padding:0 20px 20px;font-size:11px;color:var(--muted);text-align:center;line-height:1.6;">
+      No cloud · No internet · Local Wi-Fi only
+    </div>
+  </div>
+
+  <!-- SCREEN: SENDER MODE -->
+  <div id="screen-sender" class="screen">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('screen-home')">
+        <svg viewBox="0 0 18 18"><polyline points="11,4 6,9 11,14"/></svg>
+        Back
+      </button>
+      <div style="margin-left:auto;"><span class="pill connected dot"><span class="liveblip"></span> Broadcasting</span></div>
+    </div>
+    <div style="padding:16px 20px 0;">
+      <div class="screen-title" style="font-size:19px;">Sender Mode</div>
+    </div>
+    <div class="conn-box">
+      <div class="c-row">
+        <span class="conn-label">WebSocket server</span>
+        <span class="pill connected dot" style="font-size:10px;padding:2px 8px;">Running</span>
+      </div>
+      <div class="c-row">
+        <span class="conn-label">Server address</span>
+        <span class="conn-value" style="font-family:monospace;font-size:12px;">ws://192.168.1.42:8080</span>
+      </div>
+      <div class="c-row" style="margin-bottom:0;">
+        <span class="conn-label">Connected receivers</span>
+        <span class="conn-value">1</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:70%;"></div></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Forwarded</div>
+        <div class="stat-value">247</div>
+        <div class="stat-sub">Notifications</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">SMS Relayed</div>
+        <div class="stat-value">18</div>
+        <div class="stat-sub">Messages</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Uptime</div>
+        <div class="stat-value">4h 22m</div>
+        <div class="stat-sub">This session</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Last event</div>
+        <div class="stat-value" style="font-size:16px;">2s ago</div>
+        <div class="stat-sub">WhatsApp</div>
+      </div>
+    </div>
+    <div class="section-label">Recent events</div>
+    <div class="event-list">
+      <div class="event-item fade-in">
+        <div class="e-row"><span class="e-app">WhatsApp</span><span class="e-time">just now</span></div>
+        <div class="e-title">Sara K.</div>
+        <div class="e-body">Are you coming to the meeting at 3?</div>
+      </div>
+      <div class="event-item">
+        <div class="e-row"><span class="e-app" style="color:#3b82f6;">SMS<span class="sms-badge">SMS</span></span><span class="e-time">1m ago</span></div>
+        <div class="e-title">+98 912 345 6789</div>
+        <div class="e-body">Your verification code is 849201. Do not share.</div>
+      </div>
+      <div class="event-item">
+        <div class="e-row"><span class="e-app" style="color:#EA4335;">Gmail</span><span class="e-time">3m ago</span></div>
+        <div class="e-title">GitHub · Action failed</div>
+        <div class="e-body">mirrorlink / workflow run #89 failed on main</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn-main outline" onclick="go('screen-home')" style="margin-top:16px;">Stop & Exit</button>
+  </div>
+
+  <!-- SCREEN: RECEIVER MODE -->
+  <div id="screen-receiver" class="screen">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('screen-home')">
+        <svg viewBox="0 0 18 18"><polyline points="11,4 6,9 11,14"/></svg>
+        Back
+      </button>
+      <div style="margin-left:auto;"><span class="pill connected dot">Receiving</span></div>
+    </div>
+    <div style="padding:12px 20px 0;display:flex;justify-content:space-between;align-items:flex-end;">
+      <div class="screen-title" style="font-size:19px;">History</div>
+      <div style="font-size:11px;color:var(--muted);">From: 192.168.1.42</div>
+    </div>
+    <div class="tabs-bar">
+      <button class="tab-btn active" id="tab-active" onclick="switchTab('active')">Active <span class="tab-count" id="cnt-active">5</span></button>
+      <button class="tab-btn" id="tab-archive" onclick="switchTab('archive')">Archive <span class="tab-count gray" id="cnt-archive">2</span></button>
+    </div>
+
+    <div class="notif-list" id="list-active">
+    </div>
+    <div class="notif-list" id="list-archive" style="display:none;">
+    </div>
+  </div>
+</div>
+
+<script>
+const notifications = [
+  {id:1,app:'whatsapp',appLabel:'WhatsApp',sender:'Sara K.',body:'Are you coming to the meeting at 3?',time:'just now',status:'active',dot:'whatsapp',archivedAt:null,daysLeft:null},
+  {id:2,app:'sms',appLabel:'SMS',sender:'+98 912 345 6789',body:'Your verification code is 849201. Do not share with anyone.',time:'1m ago',status:'active',dot:'sms',archivedAt:null,daysLeft:null},
+  {id:3,app:'telegram',appLabel:'Telegram',sender:'Dev Group',body:'New PR merged: feat/websocket-server by @mo97',time:'4m ago',status:'active',dot:'telegram',archivedAt:null,daysLeft:null},
+  {id:4,app:'gmail',appLabel:'Gmail',sender:'GitHub Actions',body:'Workflow run #89 failed on branch main',time:'7m ago',status:'active',dot:'gmail',archivedAt:null,daysLeft:null},
+  {id:5,app:'slack',appLabel:'Slack',sender:'#infra-alerts',body:'Disk usage on node-02 reached 85%',time:'12m ago',status:'active',dot:'slack',archivedAt:null,daysLeft:null},
+  {id:6,app:'whatsapp',appLabel:'WhatsApp',sender:'Mom',body:'Call me when you get a chance ❤️',time:'Yesterday',status:'archived',dot:'whatsapp',archivedAt:'2h ago',daysLeft:29},
+  {id:7,app:'sms',appLabel:'SMS',sender:'+98 21 8888 0000',body:'Your appointment is confirmed for June 21 at 10:00',time:'Yesterday',status:'archived',dot:'sms',archivedAt:'5h ago',daysLeft:29},
+];
+
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(id==='screen-receiver') renderLists();
+}
+
+function renderLists(){
+  const active=notifications.filter(n=>n.status==='active');
+  const archive=notifications.filter(n=>n.status==='archived');
+  document.getElementById('cnt-active').textContent=active.length;
+  document.getElementById('cnt-archive').textContent=archive.length;
+
+  document.getElementById('list-active').innerHTML=active.length?active.map(n=>`
+    <div class="notif-item fade-in" id="ni-${n.id}">
+      <div class="notif-header">
+        <div class="app-chip">
+          <div class="app-dot ${n.dot}"></div>
+          <span class="app-name-chip">${n.appLabel}</span>
+        </div>
+        <span class="notif-time">${n.time}</span>
+      </div>
+      <div class="notif-sender">${n.sender}</div>
+      <div class="notif-body">${n.body}</div>
+      <div class="notif-footer">
+        <span></span>
+        <button class="dismiss-btn" onclick="dismiss(${n.id})">Dismiss →</button>
+      </div>
+    </div>
+  `).join(''):`<div class="empty-state"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 34V20a16 16 0 0 1 32 0v14l4 6H4l4-6z"/><path d="M20 40a4 4 0 0 0 8 0"/></svg><p>No active notifications.<br>New arrivals appear here.</p></div>`;
+
+  document.getElementById('list-archive').innerHTML=archive.length?archive.map(n=>`
+    <div class="notif-item fade-in" id="ni-${n.id}">
+      <div class="notif-header">
+        <div class="app-chip">
+          <div class="app-dot ${n.dot}"></div>
+          <span class="app-name-chip">${n.appLabel}</span>
+        </div>
+        <span class="notif-time">${n.time}</span>
+      </div>
+      <div class="notif-sender">${n.sender}</div>
+      <div class="notif-body" style="color:var(--muted);">${n.body}</div>
+      <div class="notif-footer">
+        <span class="days-badge">Auto-delete in ${n.daysLeft}d</span>
+        <button class="restore-btn" onclick="restore(${n.id})">Restore ↑</button>
+      </div>
+    </div>
+  `).join(''):`<div class="empty-state"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="8" width="32" height="32" rx="6"/><line x1="16" y1="24" x2="32" y2="24"/></svg><p>Nothing archived yet.</p></div>`;
+}
+
+function dismiss(id){
+  const n=notifications.find(x=>x.id===id);
+  if(!n)return;
+  n.status='archived';n.archivedAt='just now';n.daysLeft=30;
+  const el=document.getElementById('ni-'+id);
+  if(el){el.style.opacity='0';el.style.transform='translateX(40px)';el.style.transition='all .2s ease';setTimeout(()=>renderLists(),210);}
+}
+
+function restore(id){
+  const n=notifications.find(x=>x.id===id);
+  if(!n)return;
+  n.status='active';n.archivedAt=null;n.daysLeft=null;
+  const el=document.getElementById('ni-'+id);
+  if(el){el.style.opacity='0';el.style.transition='all .2s ease';setTimeout(()=>renderLists(),210);}
+}
+
+function switchTab(t){
+  document.getElementById('tab-active').classList.toggle('active',t==='active');
+  document.getElementById('tab-archive').classList.toggle('active',t==='archive');
+  document.getElementById('list-active').style.display=t==='active'?'flex':'none';
+  document.getElementById('list-archive').style.display=t==='archive'?'flex':'none';
+}
+</script>
