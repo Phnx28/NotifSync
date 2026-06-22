@@ -12,6 +12,7 @@ import com.google.gson.Gson
 import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.NotifSyncApp
 import com.phnx28.notifsync.ServiceLocator
+import com.phnx28.notifsync.data.ConnectionRepository
 import com.phnx28.notifsync.data.model.NotificationEvent
 import com.phnx28.notifsync.network.Crypto
 import com.phnx28.notifsync.network.NsdHelper
