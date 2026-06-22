@@ -5,31 +5,25 @@ import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import com.phnx28.notifsync.data.local.AppDatabase
-import com.phnx28.notifsync.data.repository.NotificationRepository
 import com.phnx28.notifsync.worker.CleanupWorker
 import java.util.concurrent.TimeUnit
 
 class NotifSyncApp : Application() {
 
-    val database by lazy { AppDatabase.getInstance(this) }
-    val repository by lazy { NotificationRepository(database) }
-
     override fun onCreate() {
         super.onCreate()
+        ServiceLocator.init(this)
         scheduleCleanupWork()
     }
 
     private fun scheduleCleanupWork() {
-        // Daily cleanup with a 2-hour flex window + battery-not-low constraint
-        // so the system can batch it with other work (AUDIT.md L-08).
         val constraints = Constraints.Builder()
             .setRequiresBatteryNotLow(true)
             .build()
 
         val cleanupWork = PeriodicWorkRequestBuilder<CleanupWorker>(
             1, TimeUnit.DAYS,
-            2, TimeUnit.HOURS   // flex period — work runs within this window
+            2, TimeUnit.HOURS
         )
             .setConstraints(constraints)
             .build()

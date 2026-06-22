@@ -2,6 +2,7 @@ package com.phnx28.notifsync.network
 
 import android.util.Log
 import com.phnx28.notifsync.Constants
+import com.phnx28.notifsync.util.AppLog
 import org.java_websocket.WebSocket
 import org.java_websocket.drafts.Draft
 import org.java_websocket.exceptions.InvalidDataException
@@ -57,7 +58,7 @@ class WebSocketServer(
         // Rate limit: bail out early if this IP is in cooldown.
         val lockedUntil = lockoutUntil[clientIp] ?: 0L
         if (now < lockedUntil) {
-            Log.w(TAG, "Rejecting $clientIp — locked for ${lockedUntil - now}ms")
+            AppLog.w(TAG, "Rejecting $clientIp — locked for ${lockedUntil - now}ms")
             throw InvalidDataException(CloseFrame.TRY_AGAIN_LATER, "Too many attempts")
         }
 
@@ -69,11 +70,13 @@ class WebSocketServer(
         if (!ok) {
             val attempts = (failedAttempts[clientIp] ?: 0) + 1
             failedAttempts[clientIp] = attempts
-            Log.w(TAG, "Rejecting $clientIp — invalid auth (attempt $attempts)")
+            AppLog.w(TAG, "Rejecting $clientIp — invalid auth (attempt $attempts/${Constants.AUTH_MAX_FAILURES}). " +
+                "Got auth=${if (clientAuth.isEmpty()) "<empty>" else clientAuth.take(16) + "..."}, " +
+                "expected=${expected.take(16)}...")
             if (attempts >= Constants.AUTH_MAX_FAILURES) {
                 lockoutUntil[clientIp] = now + Constants.AUTH_LOCKOUT_MS
                 failedAttempts.remove(clientIp)
-                Log.w(TAG, "Locking out $clientIp for ${Constants.AUTH_LOCKOUT_MS}ms")
+                AppLog.w(TAG, "Locking out $clientIp for ${Constants.AUTH_LOCKOUT_MS}ms")
             }
             throw InvalidDataException(CloseFrame.POLICY_VALIDATION, "Unauthorized")
         }
@@ -81,13 +84,14 @@ class WebSocketServer(
         // Success — clear any stale failure counters.
         failedAttempts.remove(clientIp)
         lockoutUntil.remove(clientIp)
+        AppLog.i(TAG, "Handshake OK from $clientIp")
         return super.onWebsocketHandshakeReceivedAsServer(conn, draft, request)
     }
 
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
         clients.add(conn)
         val addr = conn.remoteSocketAddress?.address?.hostAddress ?: "unknown"
-        Log.d(TAG, "Client connected: $addr (total: ${clients.size})")
+        AppLog.i(TAG, "Client connected: $addr (total: ${clients.size})")
         onClientConnected?.invoke(addr)
         onConnectionChanged?.invoke(clients.size)
     }
@@ -95,7 +99,7 @@ class WebSocketServer(
     override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) {
         clients.remove(conn)
         val addr = conn.remoteSocketAddress?.address?.hostAddress ?: "unknown"
-        Log.d(TAG, "Client disconnected: $addr (total: ${clients.size})")
+        AppLog.i(TAG, "Client disconnected: $addr code=$code reason=$reason (total: ${clients.size})")
         onClientDisconnected?.invoke(addr)
         onConnectionChanged?.invoke(clients.size)
     }
@@ -110,7 +114,7 @@ class WebSocketServer(
     }
 
     override fun onStart() {
-        Log.d(TAG, "WebSocket server started on port $port")
+        AppLog.i(TAG, "WebSocket server started on port $port")
     }
 
     /**

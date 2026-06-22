@@ -12,9 +12,9 @@ android {
         applicationId = "com.phnx28.notifsync"
         minSdk = 29
         targetSdk = 34
-        // v0.2.2 — UI improvements (connection feedback, sequential permissions)
-        versionCode = 5
-        versionName = "0.2.2"
+        // v0.2.3 — architecture refactor + connection fix + log window
+        versionCode = 6
+        versionName = "0.2.3"
     }
 
     buildTypes {

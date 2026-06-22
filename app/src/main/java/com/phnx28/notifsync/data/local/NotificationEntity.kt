@@ -22,7 +22,9 @@ data class NotificationEntity(
     val timestamp: Long,
     val type: String,
     val status: String = STATUS_ACTIVE,
-    @ColumnInfo(name = "archived_at") val archivedAt: Long? = null
+    @ColumnInfo(name = "archived_at") val archivedAt: Long? = null,
+    /** v0.2.3: tracks whether this event was delivered to all connected receivers. */
+    @ColumnInfo(name = "delivered") val delivered: Boolean = false
 ) {
     companion object {
         const val STATUS_ACTIVE = "ACTIVE"

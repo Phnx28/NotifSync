@@ -10,10 +10,9 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import com.phnx28.notifsync.NotifSyncApp
 import com.phnx28.notifsync.R
+import com.phnx28.notifsync.ServiceLocator
 import com.phnx28.notifsync.databinding.FragmentSenderBinding
-import com.phnx28.notifsync.network.Crypto
 import com.phnx28.notifsync.service.SenderForegroundService
 import com.phnx28.notifsync.util.PermissionsHelper
 import com.phnx28.notifsync.util.showNeutralSnackbar
@@ -88,14 +87,9 @@ class SenderFragment : Fragment() {
         showSuccessSnackbar("Broadcasting started")
     }
 
-    /**
-     * Collect the server info flow. This emits immediately on subscription
-     * (StateFlow behavior) with the current value, so the PIN/salt/IP show
-     * up as soon as the fragment loads — no need to navigate away and back.
-     */
     private fun observeServerInfo() {
         viewLifecycleOwner.lifecycleScope.launch {
-            SenderForegroundService.serverInfoFlow.collectLatest { info ->
+            ServiceLocator.connectionRepository.senderInfo.collectLatest { info ->
                 if (info == null) {
                     binding.tvConnectedReceivers.text = "0"
                     binding.tvServerAddress.text = "ws://---:${com.phnx28.notifsync.Constants.DEFAULT_PORT}"
@@ -110,33 +104,29 @@ class SenderFragment : Fragment() {
             }
         }
 
-        val app = requireActivity().application as NotifSyncApp
         viewLifecycleOwner.lifecycleScope.launch {
-            app.repository.getNotificationCount().collectLatest { count ->
+            ServiceLocator.notificationRepository.getNotificationCount().collectLatest { count ->
                 binding.tvForwardedCount.text = count.toString()
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {
-            app.repository.getSmsCount().collectLatest { count ->
+            ServiceLocator.notificationRepository.getSmsCount().collectLatest { count ->
                 binding.tvArchivedCount.text = count.toString()
             }
         }
     }
 
-    /**
-     * Show a snackbar whenever a receiver connects or disconnects.
-     */
     private fun observeClientEvents() {
         viewLifecycleOwner.lifecycleScope.launch {
-            SenderForegroundService.clientEventFlow.collect { event ->
+            ServiceLocator.connectionRepository.senderEvents.collect { event ->
                 when (event) {
-                    is SenderForegroundService.ClientEvent.ClientConnected -> {
+                    is com.phnx28.notifsync.data.ConnectionRepository.SenderEvent.ClientConnected -> {
                         showSuccessSnackbar("Receiver connected from ${event.address}")
                     }
-                    is SenderForegroundService.ClientEvent.ClientDisconnected -> {
+                    is com.phnx28.notifsync.data.ConnectionRepository.SenderEvent.ClientDisconnected -> {
                         showWarningSnackbar("Receiver disconnected (${event.address})")
                     }
-                    SenderForegroundService.ClientEvent.ServiceStopped -> {
+                    com.phnx28.notifsync.data.ConnectionRepository.SenderEvent.ServiceStopped -> {
                         showNeutralSnackbar("Sender stopped")
                     }
                 }

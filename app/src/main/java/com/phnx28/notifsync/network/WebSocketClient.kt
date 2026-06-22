@@ -4,6 +4,8 @@ import android.util.Log
 import com.google.gson.Gson
 import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.data.model.NotificationEvent
+import com.phnx28.notifsync.service.ConnectionState
+import com.phnx28.notifsync.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,18 +24,17 @@ import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
 import javax.crypto.spec.SecretKeySpec
 
-import com.phnx28.notifsync.service.ConnectionState
-
 /**
  * Receiver-side WebSocket client.
  *
- * v0.2.1 hardening (see AUDIT.md C-01 / C-02 / H-07 / H-10 / H-11):
- *  - Sends `X-Pairing-Auth = SHA-256(pin + sessionSalt)` instead of the raw PIN.
- *  - Derives an AES-256 key from the PIN + sessionSalt; decrypts every
- *    inbound text frame as `Base64(AES-GCM(jsonBytes))`.
- *  - Caps inbound frame size at [Constants.MAX_MESSAGE_SIZE].
- *  - Reconnect capped at [Constants.RECONNECT_MAX_ATTEMPTS] with ±20% jitter.
- *  - `webSocket` field nulled on `onFailure`/`onClosed` so [isAlive] is honest.
+ * v0.2.3 fixes:
+ *  - **Endless reconnect bug fix:** `reconnectAttempt` is no longer reset
+ *    in `onOpen`. It's only reset after the connection has been stable
+ *    for [STABLE_CONNECTION_MS] (10s). This prevents the infinite loop
+ *    where a connection opens, immediately closes, the counter resets,
+ *    and the cycle repeats forever.
+ *  - Comprehensive logging via [AppLog] so the user can see exactly why
+ *    a connection failed.
  */
 class WebSocketClient(
     private val onEventReceived: (NotificationEvent) -> Unit
@@ -60,8 +61,8 @@ class WebSocketClient(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var reconnectJob: Job? = null
+    private var stableConnectionJob: Job? = null
 
-    // Per-session crypto material.
     @Volatile
     private var sessionKey: SecretKeySpec? = null
 
@@ -71,16 +72,15 @@ class WebSocketClient(
     @Volatile
     private var sessionSalt: ByteArray? = null
 
-    private val _isConnected = MutableStateFlow(false)
-    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
-
     private val _connectionState = MutableStateFlow(ConnectionState.IDLE)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     /**
-     * Connect to [url]. The [pin] + [sessionSalt] are used to derive the
-     * AES session key and to compute the `X-Pairing-Auth` handshake header.
+     * Time the connection must stay open before we consider it "stable"
+     * and reset the reconnect counter. Prevents the endless-reconnect bug.
      */
+    private val STABLE_CONNECTION_MS = 10_000L
+
     fun connect(url: String, pin: String, sessionSalt: ByteArray) {
         serverUrl = url
         this.pin = pin
@@ -89,6 +89,7 @@ class WebSocketClient(
         shouldReconnect = true
         reconnectAttempt = 0
         _connectionState.value = ConnectionState.CONNECTING
+        AppLog.i(TAG, "Connecting to $url (PIN=${pin}****, salt=${Crypto.toHex(sessionSalt).take(8)}...)")
         doConnect(url, pin, sessionSalt)
     }
 
@@ -100,57 +101,68 @@ class WebSocketClient(
                 .header("X-Pairing-Auth", auth)
                 .build()
             webSocket = client.newWebSocket(request, this)
-            Log.d(TAG, "Connecting to $url")
+            AppLog.d(TAG, "WebSocket request sent to $url")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initiate connection to $url", e)
+            AppLog.e(TAG, "Failed to initiate connection to $url", e)
             webSocket = null
-            _isConnected.value = false
+            _connectionState.value = ConnectionState.RECONNECTING
             scheduleReconnect()
         }
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
-        Log.d(TAG, "Connected to server")
-        reconnectAttempt = 0
-        _isConnected.value = true
+        AppLog.i(TAG, "WebSocket connected (HTTP ${response.code})")
+
+        // DON'T reset reconnectAttempt here — only reset after the
+        // connection has been stable for STABLE_CONNECTION_MS. This
+        // prevents the endless-reconnect bug where the connection opens,
+        // immediately closes, and the counter resets forever.
         _connectionState.value = ConnectionState.CONNECTED
+
+        // Schedule a "stable connection" reset. If we're still connected
+        // after 10 seconds, reset the reconnect counter.
+        stableConnectionJob?.cancel()
+        stableConnectionJob = scope.launch {
+            delay(STABLE_CONNECTION_MS)
+            if (shouldReconnect && webSocket == this@WebSocketClient.webSocket) {
+                AppLog.d(TAG, "Connection stable for ${STABLE_CONNECTION_MS}ms — resetting reconnect counter")
+                reconnectAttempt = 0
+            }
+        }
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        // Hard cap on inbound frame size (AUDIT.md H-10).
         if (text.length > Constants.MAX_MESSAGE_SIZE) {
-            Log.w(TAG, "Rejecting oversize message (${text.length} chars)")
+            AppLog.w(TAG, "Rejecting oversize message (${text.length} chars)")
             return
         }
 
         val key = sessionKey ?: run {
-            Log.w(TAG, "No session key — dropping message")
+            AppLog.w(TAG, "No session key — dropping message")
             return
         }
 
         try {
             val json = Crypto.decryptFromBase64(text, key)
-            val event = gson.fromJson(json, NotificationEvent::class.java)
-                ?: return
+            val event = gson.fromJson(json, NotificationEvent::class.java) ?: return
+            AppLog.d(TAG, "Received event: type=${event.type} app=${event.appName} body=${event.body.take(50)}")
             onEventReceived(event)
         } catch (e: Exception) {
-            // Decryption failure, malformed JSON, or Gson parse error.
-            // Drop silently — a misbehaving sender shouldn't crash the receiver.
-            Log.e(TAG, "Decrypt/parse failed for inbound frame", e)
+            AppLog.e(TAG, "Decrypt/parse failed for inbound frame", e)
         }
     }
 
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+        AppLog.w(TAG, "WebSocket closing: code=$code reason=$reason")
         webSocket.close(1000, null)
         this.webSocket = null
-        _isConnected.value = false
-        if (shouldReconnect) _connectionState.value = ConnectionState.RECONNECTING
+        stableConnectionJob?.cancel()
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        Log.d(TAG, "Disconnected: $reason")
+        AppLog.w(TAG, "WebSocket closed: code=$code reason=$reason")
         this.webSocket = null
-        _isConnected.value = false
+        stableConnectionJob?.cancel()
         if (shouldReconnect) {
             _connectionState.value = ConnectionState.RECONNECTING
             scheduleReconnect()
@@ -158,9 +170,10 @@ class WebSocketClient(
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        Log.e(TAG, "Connection failed: ${t.message}")
+        val code = response?.code ?: -1
+        AppLog.e(TAG, "WebSocket failure: code=$code message=${t.message}", t)
         this.webSocket = null
-        _isConnected.value = false
+        stableConnectionJob?.cancel()
         if (shouldReconnect) {
             _connectionState.value = ConnectionState.RECONNECTING
             scheduleReconnect()
@@ -168,10 +181,13 @@ class WebSocketClient(
     }
 
     private fun scheduleReconnect() {
-        if (!shouldReconnect) return
+        if (!shouldReconnect) {
+            AppLog.d(TAG, "Not reconnecting — shouldReconnect=false")
+            return
+        }
 
         if (reconnectAttempt >= Constants.RECONNECT_MAX_ATTEMPTS) {
-            Log.w(TAG, "Giving up after $reconnectAttempt attempts")
+            AppLog.w(TAG, "Giving up after $reconnectAttempt attempts")
             shouldReconnect = false
             _connectionState.value = ConnectionState.FAILED
             return
@@ -180,9 +196,9 @@ class WebSocketClient(
         reconnectAttempt++
         val baseDelay = (1000L * reconnectAttempt.coerceAtMost(30))
             .coerceAtMost(30_000L)
-        val jitter = (baseDelay * 0.2 * Math.random()).toLong() // ±20% jitter
+        val jitter = (baseDelay * 0.2 * Math.random()).toLong()
         val delayMs = baseDelay + jitter
-        Log.d(TAG, "Reconnecting in ${delayMs}ms (attempt $reconnectAttempt)")
+        AppLog.d(TAG, "Reconnecting in ${delayMs}ms (attempt $reconnectAttempt/${Constants.RECONNECT_MAX_ATTEMPTS})")
 
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
@@ -191,18 +207,21 @@ class WebSocketClient(
                 val url = serverUrl ?: return@launch
                 val pin = pin ?: return@launch
                 val salt = sessionSalt ?: return@launch
+                _connectionState.value = ConnectionState.CONNECTING
                 doConnect(url, pin, salt)
             }
         }
     }
 
     fun disconnect() {
+        AppLog.i(TAG, "Disconnecting (user-initiated)")
         shouldReconnect = false
         reconnectJob?.cancel()
         reconnectJob = null
+        stableConnectionJob?.cancel()
+        stableConnectionJob = null
         webSocket?.close(1000, "Client disconnecting")
         webSocket = null
-        _isConnected.value = false
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
@@ -211,5 +230,5 @@ class WebSocketClient(
         scope.cancel()
     }
 
-    fun isAlive(): Boolean = webSocket != null && _isConnected.value
+    fun isAlive(): Boolean = webSocket != null && _connectionState.value == ConnectionState.CONNECTED
 }
