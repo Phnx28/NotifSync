@@ -22,6 +22,8 @@ import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
 import javax.crypto.spec.SecretKeySpec
 
+import com.phnx28.notifsync.service.ConnectionState
+
 /**
  * Receiver-side WebSocket client.
  *
@@ -72,6 +74,9 @@ class WebSocketClient(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    private val _connectionState = MutableStateFlow(ConnectionState.IDLE)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
     /**
      * Connect to [url]. The [pin] + [sessionSalt] are used to derive the
      * AES session key and to compute the `X-Pairing-Auth` handshake header.
@@ -83,6 +88,7 @@ class WebSocketClient(
         this.sessionKey = Crypto.deriveKey(pin, sessionSalt)
         shouldReconnect = true
         reconnectAttempt = 0
+        _connectionState.value = ConnectionState.CONNECTING
         doConnect(url, pin, sessionSalt)
     }
 
@@ -107,6 +113,7 @@ class WebSocketClient(
         Log.d(TAG, "Connected to server")
         reconnectAttempt = 0
         _isConnected.value = true
+        _connectionState.value = ConnectionState.CONNECTED
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
@@ -137,6 +144,7 @@ class WebSocketClient(
         webSocket.close(1000, null)
         this.webSocket = null
         _isConnected.value = false
+        if (shouldReconnect) _connectionState.value = ConnectionState.RECONNECTING
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -144,6 +152,7 @@ class WebSocketClient(
         this.webSocket = null
         _isConnected.value = false
         if (shouldReconnect) {
+            _connectionState.value = ConnectionState.RECONNECTING
             scheduleReconnect()
         }
     }
@@ -153,6 +162,7 @@ class WebSocketClient(
         this.webSocket = null
         _isConnected.value = false
         if (shouldReconnect) {
+            _connectionState.value = ConnectionState.RECONNECTING
             scheduleReconnect()
         }
     }
@@ -163,6 +173,7 @@ class WebSocketClient(
         if (reconnectAttempt >= Constants.RECONNECT_MAX_ATTEMPTS) {
             Log.w(TAG, "Giving up after $reconnectAttempt attempts")
             shouldReconnect = false
+            _connectionState.value = ConnectionState.FAILED
             return
         }
 
@@ -192,6 +203,7 @@ class WebSocketClient(
         webSocket?.close(1000, "Client disconnecting")
         webSocket = null
         _isConnected.value = false
+        _connectionState.value = ConnectionState.DISCONNECTED
     }
 
     fun shutdown() {

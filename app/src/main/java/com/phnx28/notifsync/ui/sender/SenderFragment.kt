@@ -47,8 +47,6 @@ class SenderFragment : Fragment() {
             findNavController().navigate(R.id.action_sender_to_home)
         }
 
-        // v0.2.1 — copy buttons (AUDIT.md U-03 / U-04). Lets the user paste
-        // the IP + PIN + salt into a chat / messenger instead of typing them.
         binding.btnCopyIp.setOnClickListener {
             val ip = binding.tvServerAddress.text.toString()
             copyToClipboard("NotifSync address", ip)
@@ -60,15 +58,15 @@ class SenderFragment : Fragment() {
             showSuccessSnackbar("Copied PIN")
         }
         binding.btnCopySalt.setOnClickListener {
-            val saltHex = SenderForegroundService.activeSessionSalt
-                ?.let(Crypto::toHex) ?: ""
-            if (saltHex.isNotEmpty()) {
+            val saltHex = binding.tvSessionSalt.text.toString()
+            if (saltHex.isNotEmpty() && saltHex != getString(R.string.unknown)) {
                 copyToClipboard("NotifSync session salt", saltHex)
                 showSuccessSnackbar("Copied salt")
             }
         }
 
-        observeStats()
+        observeServerInfo()
+        observeClientEvents()
     }
 
     private fun copyToClipboard(label: String, value: String) {
@@ -90,34 +88,58 @@ class SenderFragment : Fragment() {
         showSuccessSnackbar("Broadcasting started")
     }
 
-    private fun observeStats() {
-        val app = requireActivity().application as NotifSyncApp
+    /**
+     * Collect the server info flow. This emits immediately on subscription
+     * (StateFlow behavior) with the current value, so the PIN/salt/IP show
+     * up as soon as the fragment loads — no need to navigate away and back.
+     */
+    private fun observeServerInfo() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            SenderForegroundService.serverInfoFlow.collectLatest { info ->
+                if (info == null) {
+                    binding.tvConnectedReceivers.text = "0"
+                    binding.tvServerAddress.text = "ws://---:${com.phnx28.notifsync.Constants.DEFAULT_PORT}"
+                    binding.tvPairingPin.text = "------"
+                    binding.tvSessionSalt.text = getString(R.string.unknown)
+                    return@collectLatest
+                }
+                binding.tvConnectedReceivers.text = info.connectedClients.toString()
+                binding.tvServerAddress.text = "ws://${info.ipAddress ?: "Unknown IP"}:${info.port}"
+                binding.tvPairingPin.text = info.pin
+                binding.tvSessionSalt.text = info.saltHex
+            }
+        }
 
-        // v0.2.1 — fix for AUDIT.md I-08: the "Forwarded" stat now shows the
-        // count of NOTIFICATION events (previously it showed the active count).
+        val app = requireActivity().application as NotifSyncApp
         viewLifecycleOwner.lifecycleScope.launch {
             app.repository.getNotificationCount().collectLatest { count ->
                 binding.tvForwardedCount.text = count.toString()
             }
         }
-
-        // v0.2.1 — fix for AUDIT.md I-08: the "SMS Relayed" stat now shows
-        // the count of SMS events (previously it showed the archived count).
         viewLifecycleOwner.lifecycleScope.launch {
             app.repository.getSmsCount().collectLatest { count ->
                 binding.tvArchivedCount.text = count.toString()
             }
         }
+    }
 
+    /**
+     * Show a snackbar whenever a receiver connects or disconnects.
+     */
+    private fun observeClientEvents() {
         viewLifecycleOwner.lifecycleScope.launch {
-            SenderForegroundService.connectionCountFlow.collectLatest { count ->
-                binding.tvConnectedReceivers.text = count.toString()
-                val ip = SenderForegroundService.getLocalIpAddress() ?: "Unknown IP"
-                binding.tvServerAddress.text = "ws://$ip:${com.phnx28.notifsync.Constants.DEFAULT_PORT}"
-                binding.tvPairingPin.text = SenderForegroundService.activePin ?: "------"
-                SenderForegroundService.activeSessionSalt?.let {
-                    binding.tvSessionSalt.text = Crypto.toHex(it)
-                } ?: binding.tvSessionSalt.setText(R.string.unknown)
+            SenderForegroundService.clientEventFlow.collect { event ->
+                when (event) {
+                    is SenderForegroundService.ClientEvent.ClientConnected -> {
+                        showSuccessSnackbar("Receiver connected from ${event.address}")
+                    }
+                    is SenderForegroundService.ClientEvent.ClientDisconnected -> {
+                        showWarningSnackbar("Receiver disconnected (${event.address})")
+                    }
+                    SenderForegroundService.ClientEvent.ServiceStopped -> {
+                        showNeutralSnackbar("Sender stopped")
+                    }
+                }
             }
         }
     }

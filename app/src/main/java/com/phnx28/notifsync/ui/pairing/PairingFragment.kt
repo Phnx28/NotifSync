@@ -19,6 +19,7 @@ import com.phnx28.notifsync.databinding.FragmentPairingBinding
 import com.phnx28.notifsync.network.Crypto
 import com.phnx28.notifsync.network.NsdHelper
 import com.phnx28.notifsync.service.ReceiverForegroundService
+import com.phnx28.notifsync.service.SenderForegroundService
 import com.phnx28.notifsync.util.showErrorSnackbar
 import com.phnx28.notifsync.util.showSuccessSnackbar
 import java.net.InetAddress
@@ -116,6 +117,15 @@ class PairingFragment : Fragment() {
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 activity?.runOnUiThread {
                     val host = serviceInfo.host ?: return@runOnUiThread
+
+                    // Filter out our own device — don't show self in the
+                    // discovery list (the user might have started a sender
+                    // on this device before switching to receiver mode).
+                    val localIp = SenderForegroundService.getLocalIpAddress()
+                    if (localIp != null && host.hostAddress == localIp) {
+                        return@runOnUiThread
+                    }
+
                     // Reject services without a salt — they're either v0.2.0
                     // senders (pre-crypto) or rogue services (AUDIT.md C-04).
                     val saltHex = serviceInfo.attributes["salt"]
