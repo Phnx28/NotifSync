@@ -9,7 +9,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.data.model.NotificationEvent
-import com.phnx28.notifsync.network.EventBus
+import com.phnx28.notifsync.ServiceLocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,7 +56,7 @@ class SmsReceiver : BroadcastReceiver() {
                         )
 
                         val json = gson.toJson(event)
-                        EventBus.tryEmit(json)
+                        ServiceLocator.connectionRepository.emitEvent(json)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error processing SMS from $sender", e)
                     }

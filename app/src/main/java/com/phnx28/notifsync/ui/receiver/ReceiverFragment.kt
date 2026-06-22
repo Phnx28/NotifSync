@@ -5,27 +5,32 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.viewpager2.adapter.FragmentStateAdapter
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.tabs.TabLayoutMediator
 import com.phnx28.notifsync.R
+import com.phnx28.notifsync.ServiceLocator
 import com.phnx28.notifsync.databinding.FragmentReceiverBinding
 import com.phnx28.notifsync.service.ConnectionState
 import com.phnx28.notifsync.service.ReceiverForegroundService
 import com.phnx28.notifsync.service.SenderForegroundService
+import com.phnx28.notifsync.util.AppLog
 import com.phnx28.notifsync.util.showErrorSnackbar
 import com.phnx28.notifsync.util.showNeutralSnackbar
 import com.phnx28.notifsync.util.showSuccessSnackbar
 import com.phnx28.notifsync.util.showWarningSnackbar
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import androidx.lifecycle.lifecycleScope
 
 class ReceiverFragment : Fragment() {
 
     private var _binding: FragmentReceiverBinding? = null
     private val binding get() = _binding!!
     private var lastState: ConnectionState? = null
+    private var logSheet: BottomSheetBehavior<View>? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -39,8 +44,9 @@ class ReceiverFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Show the sender IP in the header.
-        val senderIp = ReceiverForegroundService.connectedSenderIp ?: "—"
+        setupLogSheet()
+
+        val senderIp = ServiceLocator.connectionRepository.connectedSenderIp.value ?: "—"
         binding.tvFromIp.text = getString(R.string.from_ip, senderIp)
 
         val tabTitles = arrayOf("Active", "Archive")
@@ -63,43 +69,46 @@ class ReceiverFragment : Fragment() {
         }
 
         observeConnectionState()
+        observeLogs()
     }
 
-    /**
-     * Observe the receiver's connection state and show a snackbar on
-     * transitions. Also updates the header text with the current status.
-     */
+    private fun setupLogSheet() {
+        logSheet = BottomSheetBehavior.from(binding.logSheet.root).apply {
+            peekHeight = (32 * resources.displayMetrics.density).toInt() // 32dp peek — narrow strip
+            state = BottomSheetBehavior.STATE_COLLAPSED
+            isHideable = false
+        }
+
+        binding.logSheet.btnCloseLog.setOnClickListener {
+            logSheet?.state = BottomSheetBehavior.STATE_COLLAPSED
+        }
+        binding.logSheet.btnClearLog.setOnClickListener {
+            AppLog.clear()
+        }
+    }
+
     private fun observeConnectionState() {
         viewLifecycleOwner.lifecycleScope.launch {
-            ReceiverForegroundService.connectionStateFlow.collectLatest { state ->
-                // Suppress the initial IDLE → CONNECTING transition if
-                // we've never been connected (avoids a redundant snackbar
-                // on fragment load).
+            ServiceLocator.connectionRepository.receiverState.collectLatest { state ->
                 if (lastState != null && lastState != state) {
                     when (state) {
                         ConnectionState.CONNECTED -> {
                             showSuccessSnackbar("Connected to sender")
                         }
-                        ConnectionState.CONNECTING -> {
-                            // Don't snackbar on connecting — the pairing
-                            // fragment already showed "Connecting to…"
-                        }
+                        ConnectionState.CONNECTING -> { /* no snackbar */ }
                         ConnectionState.RECONNECTING -> {
                             showWarningSnackbar("Connection lost — reconnecting…")
                         }
                         ConnectionState.FAILED -> {
-                            showErrorSnackbar("Connection failed — check PIN, IP, and salt")
+                            showErrorSnackbar("Connection failed — check PIN, IP, and salt. Open the log window for details.")
                         }
-                        ConnectionState.DISCONNECTED -> {
-                            // User-initiated, snackbar already shown by the button
-                        }
+                        ConnectionState.DISCONNECTED -> { /* user-initiated */ }
                         ConnectionState.IDLE -> { /* no-op */ }
                     }
                 }
                 lastState = state
 
-                // Update the header subtitle with the current state.
-                val senderIp = ReceiverForegroundService.connectedSenderIp ?: "—"
+                val senderIp = ServiceLocator.connectionRepository.connectedSenderIp.value ?: "—"
                 val statusText = when (state) {
                     ConnectionState.CONNECTED -> "Connected"
                     ConnectionState.CONNECTING -> "Connecting…"
@@ -109,6 +118,18 @@ class ReceiverFragment : Fragment() {
                     ConnectionState.IDLE -> "Idle"
                 }
                 binding.tvFromIp.text = getString(R.string.from_ip, "$senderIp · $statusText")
+            }
+        }
+    }
+
+    private fun observeLogs() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            AppLog.entriesFlow.collectLatest { entries ->
+                val sb = StringBuilder()
+                for (entry in entries) {
+                    sb.append(AppLog.format(entry)).append('\n')
+                }
+                binding.logSheet.tvLog.text = sb.toString()
             }
         }
     }

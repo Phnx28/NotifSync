@@ -11,23 +11,18 @@ import android.util.Log
 import com.google.gson.Gson
 import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.NotifSyncApp
+import com.phnx28.notifsync.ServiceLocator
 import com.phnx28.notifsync.data.model.NotificationEvent
 import com.phnx28.notifsync.network.Crypto
-import com.phnx28.notifsync.network.EventBus
 import com.phnx28.notifsync.network.NsdHelper
 import com.phnx28.notifsync.network.WebSocketServer
+import com.phnx28.notifsync.util.AppLog
 import com.phnx28.notifsync.util.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.net.Inet4Address
@@ -52,10 +47,13 @@ class SenderForegroundService : Service() {
     @Volatile
     private var wifiLock: WifiManager.WifiLock? = null
 
+    private val connRepo get() = ServiceLocator.connectionRepository
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.i(TAG, "Sender service creating")
         NotificationHelper.createSenderChannel(this)
         startForeground(NOTIFICATION_ID, NotificationHelper.buildSenderNotification(this).build())
         startWebSocketServer()
@@ -68,12 +66,13 @@ class SenderForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        AppLog.i(TAG, "Sender service destroying")
         eventCollectorJob?.cancel()
         releaseWakeLocks()
         webSocketServer?.stopServer()
         nsdHelper?.tearDown()
-        _serverInfoFlow.value = null
-        _clientEventFlow.tryEmit(ClientEvent.ServiceStopped)
+        connRepo.setSenderInfo(null)
+        connRepo.emitSenderEvent(ConnectionRepository.SenderEvent.ServiceStopped)
         serviceScope.cancel()
     }
 
@@ -81,14 +80,19 @@ class SenderForegroundService : Service() {
         val pin = (100_000..999_999).random().toString()
         val salt = Crypto.newSessionSalt()
         val key = Crypto.deriveKey(pin, salt)
+        val ip = getLocalIpAddress()
 
-        _serverInfoFlow.value = ServerInfo(
-            pin = pin,
-            saltHex = Crypto.toHex(salt),
-            ipAddress = getLocalIpAddress(),
-            port = Constants.DEFAULT_PORT,
-            connectedClients = 0,
-            isRunning = true
+        AppLog.i(TAG, "Starting WebSocket server: port=${Constants.DEFAULT_PORT} ip=$ip pin=$pin salt=${Crypto.toHex(salt).take(8)}...")
+
+        connRepo.setSenderInfo(
+            ServerInfo(
+                pin = pin,
+                saltHex = Crypto.toHex(salt),
+                ipAddress = ip,
+                port = Constants.DEFAULT_PORT,
+                connectedClients = 0,
+                isRunning = true
+            )
         )
 
         webSocketServer = WebSocketServer(
@@ -96,18 +100,15 @@ class SenderForegroundService : Service() {
             pin = pin,
             sessionSalt = salt,
             onConnectionChanged = { count ->
-                // Update the server info flow with the new client count.
-                _serverInfoFlow.value?.let { current ->
-                    _serverInfoFlow.value = current.copy(connectedClients = count)
-                }
+                connRepo.updateSenderClientCount(count)
                 updateForegroundNotification(count)
                 if (count > 0) acquireWakeLocks() else releaseWakeLocks()
             },
             onClientConnected = { address ->
-                _clientEventFlow.tryEmit(ClientEvent.ClientConnected(address))
+                connRepo.emitSenderEvent(ConnectionRepository.SenderEvent.ClientConnected(address))
             },
             onClientDisconnected = { address ->
-                _clientEventFlow.tryEmit(ClientEvent.ClientDisconnected(address))
+                connRepo.emitSenderEvent(ConnectionRepository.SenderEvent.ClientDisconnected(address))
             }
         ).apply { startServer() }
 
@@ -120,30 +121,33 @@ class SenderForegroundService : Service() {
                 )
             )
         }
+        AppLog.i(TAG, "mDNS service registered: _notifsync._tcp port=${Constants.DEFAULT_PORT}")
 
-        Log.d(TAG, "WebSocket server started on port ${Constants.DEFAULT_PORT}")
         updateForegroundNotification(0)
     }
 
     private fun startEventCollector() {
         eventCollectorJob = serviceScope.launch {
-            EventBus.events.collect { json ->
+            ServiceLocator.connectionRepository.events.collect { json ->
                 try {
-                    val key = _serverInfoFlow.value?.let { info ->
-                        Crypto.deriveKey(info.pin, Crypto.fromHex(info.saltHex))
-                    } ?: return@collect
+                    val info = ServiceLocator.connectionRepository.senderInfo.value ?: return@collect
+                    val key = Crypto.deriveKey(info.pin, Crypto.fromHex(info.saltHex))
                     val payload = Crypto.encryptToBase64(json, key)
-                    webSocketServer?.broadcastEvent(payload)
+                    val clientCount = webSocketServer?.getClientCount() ?: 0
+                    if (clientCount > 0) {
+                        webSocketServer?.broadcastEvent(payload)
+                        AppLog.d(TAG, "Broadcast event to $clientCount client(s)")
+                    }
                     saveEventToLocal(json)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to broadcast event", e)
+                    AppLog.e(TAG, "Failed to broadcast event", e)
                 }
             }
         }
     }
 
     private fun updateForegroundNotification(count: Int) {
-        val pin = _serverInfoFlow.value?.pin
+        val pin = ServiceLocator.connectionRepository.senderInfo.value?.pin
         val pinText = pin?.let { " | PIN: $it" } ?: ""
         val notification = NotificationHelper.buildSenderNotification(this)
             .setContentText("Running on port ${Constants.DEFAULT_PORT} | Connected: $count$pinText")
@@ -180,28 +184,14 @@ class SenderForegroundService : Service() {
     private suspend fun saveEventToLocal(json: String) {
         try {
             val event = gson.fromJson(json, NotificationEvent::class.java) ?: return
-            val app = application as NotifSyncApp
-            app.repository.insertEvent(event)
+            ServiceLocator.notificationRepository.insertEvent(event)
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving event locally", e)
+            AppLog.e(TAG, "Error saving event locally", e)
         }
     }
 
-    /** Events emitted to the UI for snackbar feedback. */
-    sealed class ClientEvent {
-        data class ClientConnected(val address: String) : ClientEvent()
-        data class ClientDisconnected(val address: String) : ClientEvent()
-        object ServiceStopped : ClientEvent()
-    }
-
     companion object {
-        private val _serverInfoFlow = MutableStateFlow<ServerInfo?>(null)
-        val serverInfoFlow: StateFlow<ServerInfo?> = _serverInfoFlow.asStateFlow()
-
-        private val _clientEventFlow = MutableSharedFlow<ClientEvent>(extraBufferCapacity = 16)
-        val clientEventFlow: SharedFlow<ClientEvent> = _clientEventFlow.asSharedFlow()
-
-        fun isRunning(): Boolean = _serverInfoFlow.value?.isRunning == true
+        fun isRunning(): Boolean = ServiceLocator.connectionRepository.senderInfo.value?.isRunning == true
 
         fun getLocalIpAddress(): String? {
             return try {
@@ -213,17 +203,19 @@ class SenderForegroundService : Service() {
                     .firstOrNull { !it.isLoopbackAddress }
                     ?.hostAddress
             } catch (ex: Exception) {
-                Log.e("SenderFGService", "Error getting IP", ex)
+                AppLog.e("SenderFGService", "Error getting IP", ex)
                 null
             }
         }
 
         fun start(context: Context) {
+            AppLog.i("SenderFGService", "Starting sender service")
             val intent = Intent(context, SenderForegroundService::class.java)
             context.startForegroundService(intent)
         }
 
         fun stop(context: Context) {
+            AppLog.i("SenderFGService", "Stopping sender service")
             context.stopService(Intent(context, SenderForegroundService::class.java))
         }
     }
