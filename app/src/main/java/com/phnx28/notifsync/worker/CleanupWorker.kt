@@ -4,7 +4,8 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.phnx28.notifsync.NotifSyncApp
+import com.phnx28.notifsync.ServiceLocator
+import com.phnx28.notifsync.util.AppLog
 
 class CleanupWorker(
     context: Context,
@@ -15,12 +16,11 @@ class CleanupWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            val app = applicationContext as NotifSyncApp
-            app.repository.deleteOldArchived()
-            Log.d(TAG, "Cleanup completed successfully")
+            ServiceLocator.notificationRepository.deleteOldArchived()
+            AppLog.i(TAG, "Cleanup completed successfully")
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Cleanup failed", e)
+            AppLog.e(TAG, "Cleanup failed", e)
             Result.retry()
         }
     }
