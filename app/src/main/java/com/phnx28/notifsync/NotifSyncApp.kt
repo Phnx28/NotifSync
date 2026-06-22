@@ -23,13 +23,15 @@ class NotifSyncApp : Application() {
     private fun scheduleCleanupWork() {
         // Daily cleanup with a 2-hour flex window + battery-not-low constraint
         // so the system can batch it with other work (AUDIT.md L-08).
-        val cleanupWork = PeriodicWorkRequestBuilder<CleanupWorker>(1, TimeUnit.DAYS)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiresBatteryNotLow(true)
-                    .build()
-            )
-            .setFlex(2, TimeUnit.HOURS)
+        val constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .build()
+
+        val cleanupWork = PeriodicWorkRequestBuilder<CleanupWorker>(
+            1, TimeUnit.DAYS,
+            2, TimeUnit.HOURS   // flex period — work runs within this window
+        )
+            .setConstraints(constraints)
             .build()
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
