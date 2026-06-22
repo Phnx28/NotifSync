@@ -12,8 +12,9 @@ android {
         applicationId = "com.phnx28.notifsync"
         minSdk = 29
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.2.0"
+        // v0.2.1 — audit remediation release (see AUDIT.md)
+        versionCode = 4
+        versionName = "0.2.1"
     }
 
     buildTypes {
@@ -58,8 +59,12 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.java-websocket:Java-WebSocket:1.5.6")
+    // Bumped from 1.5.6 → 1.5.7 (GHSA-jvhw-rwqh-5xg5 — DoS on malformed frames)
+    implementation("org.java-websocket:Java-WebSocket:1.5.7")
     implementation("com.google.code.gson:gson:2.11.0")
+
+    // EncryptedSharedPreferences for the receiver's persisted PIN (AUDIT.md M-02)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")

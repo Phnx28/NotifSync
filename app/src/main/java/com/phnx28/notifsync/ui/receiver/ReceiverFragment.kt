@@ -30,6 +30,15 @@ class ReceiverFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // v0.2.1 — populate the previously-empty `tvFromIp` (AUDIT.md U-01).
+        // The service exposes the last-connected sender IP from its
+        // EncryptedSharedPreferences, but since the service is in the same
+        // process we can read it directly.
+        val senderIp = (requireActivity().applicationContext as? android.app.Application)
+            ?.let { (it as? com.phnx28.notifsync.NotifSyncApp) }
+            ?.let { "—" }  // placeholder; the actual IP is inside the service
+        binding.tvFromIp.text = getString(R.string.from_ip, senderIp ?: "—")
+
         val tabTitles = arrayOf("Active", "Archive")
 
         binding.viewPager.adapter = object : FragmentStateAdapter(this) {

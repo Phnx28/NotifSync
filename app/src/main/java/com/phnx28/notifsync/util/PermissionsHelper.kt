@@ -15,11 +15,19 @@ object PermissionsHelper {
 
     const val REQUEST_CODE_PERMISSIONS = 1001
 
-    val REQUIRED_PERMISSIONS = buildList {
+    /**
+     * Permissions the foreground services need. Built dynamically per OS
+     * version (AUDIT.md M-05):
+     *  - Pre-Android 13: NSD needs `ACCESS_FINE_LOCATION`.
+     *  - Android 13+: NSD needs `NEARBY_WIFI_DEVICES` (with `neverForLocation`
+     *    so the system doesn't fall back to location prompts).
+     */
+    val REQUIRED_PERMISSIONS: Array<String> = buildList {
         add(Manifest.permission.RECEIVE_SMS)
         add(Manifest.permission.READ_SMS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS)
+            add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -33,9 +41,10 @@ object PermissionsHelper {
     }
 
     fun hasNotificationListenerPermission(context: Context): Boolean {
-        val packageName = context.packageName
         val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-        return flat?.contains(ComponentName(context, "com.phnx28.notifsync.service.NotificationCaptureService").flattenToString()) == true
+        return flat?.contains(
+            ComponentName(context, "com.phnx28.notifsync.service.NotificationCaptureService").flattenToString()
+        ) == true
     }
 
     fun requestPermissions(activity: Activity) {
@@ -52,4 +61,15 @@ object PermissionsHelper {
         return ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
                 ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
     }
+
+    /** Receiver-only permissions — no SMS. */
+    val RECEIVER_PERMISSIONS: Array<String> = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+            add(Manifest.permission.NEARBY_WIFI_DEVICES)
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }.toTypedArray()
 }

@@ -6,12 +6,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.phnx28.notifsync.R
 
 object NotificationHelper {
 
+    private const val TAG = "NotificationHelper"
     private const val CHANNEL_ID_SENDER = "sender_service"
     private const val CHANNEL_ID_RECEIVER = "receiver_service"
     private const val CHANNEL_ID_MIRRORED = "mirrored_notifications"
@@ -24,8 +26,8 @@ object NotificationHelper {
         ).apply {
             description = "Foreground service for notification broadcasting"
         }
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 
     fun createReceiverChannel(context: Context) {
@@ -36,8 +38,8 @@ object NotificationHelper {
         ).apply {
             description = "Foreground service for receiving notifications"
         }
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 
     fun createMirroredChannel(context: Context, appName: String): String {
@@ -49,8 +51,8 @@ object NotificationHelper {
         ).apply {
             description = "Mirrored notifications from $appName"
         }
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
         return channelId
     }
 
@@ -99,10 +101,12 @@ object NotificationHelper {
             .setGroup(appName)
             .build()
 
-        NotificationManagerCompat.from(context).notify(notificationId, notification)
-    }
-
-    fun postForegroundNotification(context: Context, notificationId: Int, notification: android.app.Notification) {
-        NotificationManagerCompat.from(context).notify(notificationId, notification)
+        // POST_NOTIFICATIONS may have been denied on Android 13+ — don't
+        // crash, just log (AUDIT.md M-03).
+        try {
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "POST_NOTIFICATIONS denied — mirrored notification suppressed", e)
+        }
     }
 }

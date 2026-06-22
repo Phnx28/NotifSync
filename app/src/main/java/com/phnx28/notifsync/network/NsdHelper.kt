@@ -11,7 +11,12 @@ class NsdHelper(private val context: Context) {
     private val SERVICE_TYPE = "_notifsync._tcp."
     private val SERVICE_NAME = "NotifSync"
 
-    private var nsdManager: NsdManager? = null
+    // Lazy-init once — previously re-fetched on every register/discover call
+    // (AUDIT.md M-07).
+    private val nsdManager: NsdManager by lazy {
+        context.getSystemService(Context.NSD_SERVICE) as NsdManager
+    }
+
     private var registrationListener: NsdManager.RegistrationListener? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
 
@@ -22,13 +27,17 @@ class NsdHelper(private val context: Context) {
         fun onServiceResolved(serviceInfo: NsdServiceInfo)
     }
 
-    fun registerService(port: Int) {
-        nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
-
+    /**
+     * Register the NotifSync service on the LAN. The [txt] map is published
+     * as DNS-SD TXT records — the receiver uses the `salt` entry to derive
+     * the per-session AES key (AUDIT.md C-04).
+     */
+    fun registerService(port: Int, txt: Map<String, String> = emptyMap()) {
         val serviceInfo = NsdServiceInfo().apply {
             serviceName = SERVICE_NAME
             serviceType = SERVICE_TYPE
             setPort(port)
+            txt.forEach { (k, v) -> setAttribute(k, v) }
         }
 
         registrationListener = object : NsdManager.RegistrationListener {
@@ -49,12 +58,10 @@ class NsdHelper(private val context: Context) {
             }
         }
 
-        nsdManager?.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
+        nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
     }
 
     fun discoverServices(callback: DiscoveryCallback) {
-        nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
-
         discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
                 Log.d(TAG, "Discovery started")
@@ -85,11 +92,11 @@ class NsdHelper(private val context: Context) {
             }
         }
 
-        nsdManager?.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
     }
 
     fun resolveService(serviceInfo: NsdServiceInfo, callback: DiscoveryCallback) {
-        nsdManager?.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+        nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                 Log.e(TAG, "Resolve failed: $errorCode")
                 callback.onResolveFailed(serviceInfo, errorCode)
@@ -104,7 +111,7 @@ class NsdHelper(private val context: Context) {
 
     fun stopDiscovery() {
         try {
-            discoveryListener?.let { nsdManager?.stopServiceDiscovery(it) }
+            discoveryListener?.let { nsdManager.stopServiceDiscovery(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping discovery", e)
         }
@@ -112,7 +119,7 @@ class NsdHelper(private val context: Context) {
 
     fun unregisterService() {
         try {
-            registrationListener?.let { nsdManager?.unregisterService(it) }
+            registrationListener?.let { nsdManager.unregisterService(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering service", e)
         }

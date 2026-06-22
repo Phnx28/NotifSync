@@ -55,4 +55,10 @@
     <string name="receiver_device_label">Device B</string>
     <string name="disconnect">Disconnect</string>
     <string name="manual_ip_label">Or enter IP manually</string>
+
+    <!-- v0.2.1 new strings -->
+    <string name="unknown">unknown</string>
+    <string name="pairing_pin">Pairing PIN</string>
+    <string name="session_salt">Session salt</string>
+    <string name="copy">Copy</string>
 </resources>

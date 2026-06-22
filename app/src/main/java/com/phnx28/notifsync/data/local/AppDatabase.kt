@@ -16,15 +16,17 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "notifsync.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    // Only fall back to destructive migration on *downgrade*.
+                    // Upgrades must ship explicit Migration(N, N+1) blocks
+                    // so user history isn't silently wiped (AUDIT.md H-08).
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
-                INSTANCE = instance
-                instance
+                    .also { INSTANCE = it }
             }
         }
     }

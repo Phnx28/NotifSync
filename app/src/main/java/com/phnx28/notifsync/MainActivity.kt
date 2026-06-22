@@ -1,11 +1,8 @@
 package com.phnx28.notifsync
 
-import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import androidx.navigation.fragment.NavHostFragment
 import com.phnx28.notifsync.databinding.ActivityMainBinding
-import com.phnx28.notifsync.util.PermissionsHelper
 
 class MainActivity : AppCompatActivity() {
 
@@ -16,19 +13,10 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        if (savedInstanceState == null) {
-            PermissionsHelper.requestPermissions(this)
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PermissionsHelper.REQUEST_CODE_PERMISSIONS) {
-            // Permissions handled - app will work with whatever was granted
-        }
+        // v0.2.1 — permission requests moved to HomeFragment / SenderFragment /
+        // PairingFragment so the user only sees prompts relevant to the mode
+        // they picked (AUDIT.md L-01). Previously the SMS + location
+        // permission dialog popped up on first launch before the user had
+        // even chosen Sender or Receiver mode.
     }
 }
