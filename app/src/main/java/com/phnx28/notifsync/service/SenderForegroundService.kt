@@ -164,7 +164,7 @@ class SenderForegroundService : Service() {
             wifiLock = wm.createWifiLock(
                 WifiManager.WIFI_MODE_FULL_LOW_LATENCY,
                 "NotifSync:SenderWifiLock"
-            ).apply { acquire(Constants.WAKELOCK_TIMEOUT_MS) }
+            ).apply { acquire() }
         }
     }
 
