@@ -3,11 +3,6 @@ name: Build & Release APK
 # Triggers:
 #   - On every push to main / fix/* / release/* branches  → builds debug APK, uploads as workflow artifact
 #   - On a git tag matching v*.*.*                        → builds release APK, creates a GitHub Release with the APK attached
-#
-# The v0.2.1 audit-remediation release is created by tagging the merge commit:
-#   git tag v0.2.1
-#   git push origin v0.2.1
-# The workflow will then build the release APK and publish it to the Releases page.
 
 on:
   push:
@@ -25,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,15 +37,17 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-
-      - name: Install SDK components
+      # The ubuntu-latest runner ships with Android SDK pre-installed at
+      # /usr/local/lib/android/sdk. We just need to ensure the platform 34
+      # and build-tools 34 components are present, then accept licenses.
+      - name: Configure Android SDK
         run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_SDK_ROOT" || true
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 || true
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -5
+          echo "SDK ready:"
+          sdkmanager --list_installed 2>/dev/null | head -20 || sdkmanager --list 2>&1 | grep -E '(android-34|build-tools;34)' | head
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
