@@ -30,7 +30,7 @@ class ReceiverFragment : Fragment() {
     private var _binding: FragmentReceiverBinding? = null
     private val binding get() = _binding!!
     private var lastState: ConnectionState? = null
-    private var logSheet: BottomSheetBehavior<View>? = null
+    private var logSheet: BottomSheetBehavior<*>? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,

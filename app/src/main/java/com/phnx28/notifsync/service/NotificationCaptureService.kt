@@ -10,7 +10,6 @@ import com.google.gson.Gson
 import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.data.model.NotificationEvent
 import com.phnx28.notifsync.ServiceLocator
-import com.phnx28.notifsync.network.EventBus
 
 class NotificationCaptureService : NotificationListenerService() {
 

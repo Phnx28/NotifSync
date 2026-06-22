@@ -9,7 +9,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.phnx28.notifsync.NotifSyncApp
+import com.phnx28.notifsync.ServiceLocator
 import com.phnx28.notifsync.databinding.FragmentActiveTabBinding
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -34,9 +34,8 @@ class ActiveTabFragment : Fragment() {
 
         adapter = NotificationAdapter(
             onDismiss = { notification ->
-                val app = requireActivity().application as NotifSyncApp
                 lifecycleScope.launch {
-                    app.repository.archive(notification.id)
+                    ServiceLocator.notificationRepository.archive(notification.id)
                 }
             },
             isArchiveMode = false
@@ -55,9 +54,8 @@ class ActiveTabFragment : Fragment() {
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                 val position = viewHolder.adapterPosition
                 val notification = adapter.currentList[position]
-                val app = requireActivity().application as NotifSyncApp
                 lifecycleScope.launch {
-                    app.repository.archive(notification.id)
+                    ServiceLocator.notificationRepository.archive(notification.id)
                 }
             }
         }
@@ -68,9 +66,8 @@ class ActiveTabFragment : Fragment() {
     }
 
     private fun observeNotifications() {
-        val app = requireActivity().application as NotifSyncApp
         viewLifecycleOwner.lifecycleScope.launch {
-            app.repository.getActiveNotifications().collectLatest { notifications ->
+            ServiceLocator.notificationRepository.getActiveNotifications().collectLatest { notifications ->
                 adapter.submitList(notifications)
                 binding.tvEmpty.visibility = if (notifications.isEmpty()) View.VISIBLE else View.GONE
             }
