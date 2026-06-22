@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  NotifSync launcher icon background.
+  A subtle green gradient (lighter at top-left, darker at bottom-right)
+  gives the icon depth without being distracting.
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/green" />
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#2dd462"
+                android:endColor="#16a34a" />
+        </shape>
+    </item>
 </layer-list>

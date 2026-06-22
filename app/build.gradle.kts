@@ -24,6 +24,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Sign the release APK with the debug key so it's installable
+            // without a separate signing step. For personal-use sideloaded
+            // apps this is fine; for Play Store distribution, replace with
+            // a real release keystore via signingConfigs.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

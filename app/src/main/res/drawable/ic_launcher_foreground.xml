@@ -1,20 +1,48 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp"
-    android:height="48dp"
-    android:viewportWidth="48"
-    android:viewportHeight="48">
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!--
+      NotifSync launcher icon foreground.
+      Design: a white notification bell with a green circular "sync" badge
+      in the top-right corner. The bell represents notifications; the sync
+      arrows represent the relay/sync function.
+      Background is provided by ic_launcher_background.xml (solid green).
+    -->
+
+    <!-- Notification bell (white, large, centered) -->
+    <group
+        android:scaleX="3"
+        android:scaleY="3"
+        android:translateX="18"
+        android:translateY="18">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.64,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"/>
+    </group>
+
+    <!-- Sync badge: green circle at top-right of bell -->
     <path
         android:fillColor="#22c55e"
-        android:pathData="M0,0h48v48H0z"/>
+        android:pathData="M 74,28 m -16,0 a 16,16 0 1,0 32,0 a 16,16 0 1,0 -32,0" />
+
+    <!-- White ring around badge for contrast against bell -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M24,8l-8,8h5v12h6V16h5z"
+        android:fillColor="#00000000"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="0"/>
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M24,40l-8,-8h5V20h6v12h5z"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="0"
-        android:alpha="0.5"/>
+        android:strokeWidth="2"
+        android:pathData="M 74,28 m -16,0 a 16,16 0 1,0 32,0 a 16,16 0 1,0 -32,0" />
+
+    <!-- Sync icon (white, inside green badge) -->
+    <group
+        android:scaleX="0.7"
+        android:scaleY="0.7"
+        android:translateX="63"
+        android:translateY="17">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,4 V1 L8,5 l4,4 V6 c3.31,0 6,2.69 6,6 0,1.01,-0.25,1.97,-0.7,2.8 l1.46,1.46 C19.54,15.03 20,13.57 20,12 c0,-4.42,-3.58,-8,-8,-8zM12,18 c-3.31,0 -6,-2.69 -6,-6 0,-1.01,0.25,-1.97,0.7,-2.8 L5.24,7.74 C4.46,8.97 4,10.43 4,12 c0,4.42 3.58,8 8,8 v3 l4,-4 -4,-4 v3 z"/>
+    </group>
 </vector>
