@@ -1,0 +1,101 @@
+name: Build & Release APK
+
+# Triggers:
+#   - On every push to main / fix/* / release/* branches  → builds debug APK, uploads as workflow artifact
+#   - On a git tag matching v*.*.*                        → builds release APK, creates a GitHub Release with the APK attached
+#
+# The v0.2.1 audit-remediation release is created by tagging the merge commit:
+#   git tag v0.2.1
+#   git push origin v0.2.1
+# The workflow will then build the release APK and publish it to the Releases page.
+
+on:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+      - 'release/**'
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platforms;android-34
+            build-tools;34.0.0
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Detect build type
+        id: buildtype
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "task=assembleRelease" >> "$GITHUB_OUTPUT"
+            echo "apkpath=app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_OUTPUT"
+            echo "apkname=NotifSync-${GITHUB_REF#refs/tags/}-release-unsigned.apk" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "task=assembleDebug" >> "$GITHUB_OUTPUT"
+            echo "apkpath=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+            echo "apkname=NotifSync-debug-${GITHUB_SHA::7}.apk" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build APK
+        run: ./gradlew ${{ steps.buildtype.outputs.task }} --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp ${{ steps.buildtype.outputs.apkpath }} "output/${{ steps.buildtype.outputs.apkname }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotifSync-APK
+          path: output/*.apk
+          retention-days: 30
+
+      - name: Create GitHub Release (on tag)
+        if: steps.buildtype.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Ref:** \`${GITHUB_REF}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${GITHUB_SHA}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task:** \`${{ steps.buildtype.outputs.task }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK:** \`output/${{ steps.buildtype.outputs.apkname }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release:** ${{ steps.buildtype.outputs.is_release }}" >> $GITHUB_STEP_SUMMARY
+          ls -la output/ >> $GITHUB_STEP_SUMMARY 2>&1 || true

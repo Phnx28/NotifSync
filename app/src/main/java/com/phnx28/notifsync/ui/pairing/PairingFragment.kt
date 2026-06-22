@@ -12,8 +12,11 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
 import com.phnx28.notifsync.R
 import com.phnx28.notifsync.databinding.FragmentPairingBinding
+import com.phnx28.notifsync.network.Crypto
 import com.phnx28.notifsync.network.NsdHelper
 import com.phnx28.notifsync.service.ReceiverForegroundService
 import com.phnx28.notifsync.util.showErrorSnackbar
@@ -33,7 +36,9 @@ class PairingFragment : Fragment() {
     data class DiscoveredDevice(
         val name: String,
         val host: InetAddress,
-        val port: Int
+        val port: Int,
+        /** Per-session salt published in the mDNS TXT record (AUDIT.md C-04). */
+        val saltHex: String
     )
 
     override fun onCreateView(
@@ -49,7 +54,7 @@ class PairingFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         deviceAdapter = DeviceAdapter { device ->
-            promptForPinAndConnect(device.host.hostAddress ?: return@DeviceAdapter)
+            promptForPinAndConnect(device.host.hostAddress ?: return@DeviceAdapter, device.saltHex)
         }
 
         binding.rvDevices.layoutManager = LinearLayoutManager(context)
@@ -66,10 +71,12 @@ class PairingFragment : Fragment() {
                 return@setOnClickListener
             }
             if (!isValidIpAddress(ip)) {
-                binding.etIpAddress.error = "Enter a valid IP address"
+                binding.etIpAddress.error = "Enter a valid IP address or hostname"
                 return@setOnClickListener
             }
-            promptForPinAndConnect(ip)
+            // For manual IP entry, the user must also supply the salt — we
+            // prompt for both PIN and salt in the same dialog.
+            promptForPinAndConnect(ip, saltHex = null)
         }
 
         startDiscovery()
@@ -109,10 +116,17 @@ class PairingFragment : Fragment() {
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 activity?.runOnUiThread {
                     val host = serviceInfo.host ?: return@runOnUiThread
+                    // Reject services without a salt — they're either v0.2.0
+                    // senders (pre-crypto) or rogue services (AUDIT.md C-04).
+                    val saltHex = serviceInfo.attributes["salt"]
+                        ?.let { String(it, Charsets.UTF_8) }
+                        ?: return@runOnUiThread
+
                     val device = DiscoveredDevice(
                         name = serviceInfo.serviceName,
                         host = host,
-                        port = serviceInfo.port
+                        port = serviceInfo.port,
+                        saltHex = saltHex
                     )
                     if (discoveredDevices.none { it.host == host }) {
                         discoveredDevices.add(device)
@@ -133,22 +147,35 @@ class PairingFragment : Fragment() {
         }
     }
 
+    /** Uses `InetAddress.getByName` so IPv6 + hostnames work (AUDIT.md M-08). */
     private fun isValidIpAddress(ip: String): Boolean {
         return try {
-            val parts = ip.split(".")
-            parts.size == 4 && parts.all { it.toInt() in 0..255 }
-        } catch (e: NumberFormatException) {
+            InetAddress.getByName(ip)
+            true
+        } catch (e: Exception) {
             false
         }
     }
 
-    private fun promptForPinAndConnect(ip: String) {
+    /**
+     * Prompt for the 6-digit pairing PIN. If [saltHex] is null (manual IP
+     * entry, no mDNS), also prompt for the salt — read off the sender screen.
+     */
+    private fun promptForPinAndConnect(ip: String, saltHex: String?) {
         val context = requireContext()
-        val input = com.google.android.material.textfield.TextInputEditText(context).apply {
+        val pinInput = TextInputEditText(context).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            hint = "e.g. 1234"
+            hint = "e.g. 482921"
             filters = arrayOf(android.text.InputFilter.LengthFilter(6))
         }
+
+        val saltInput: TextInputEditText? = if (saltHex == null) {
+            TextInputEditText(context).apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                hint = "Session salt (from sender screen)"
+                filters = arrayOf(android.text.InputFilter.LengthFilter(64))
+            }
+        } else null
 
         val container = android.widget.FrameLayout(context).apply {
             val params = android.widget.FrameLayout.LayoutParams(
@@ -161,29 +188,39 @@ class PairingFragment : Fragment() {
                 topMargin = (8 * resources.displayMetrics.density).toInt()
                 bottomMargin = (8 * resources.displayMetrics.density).toInt()
             }
-            input.layoutParams = params
-            addView(input)
+            val inner = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                addView(pinInput, params)
+                saltInput?.let { addView(it, params) }
+            }
+            addView(inner)
         }
 
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Enter Pairing PIN")
-            .setMessage("Please enter the pairing PIN displayed on the Sender device.")
+            .setMessage(
+                if (saltHex == null)
+                    "Enter the 6-digit PIN and session salt displayed on the Sender device."
+                else
+                    "Enter the 6-digit PIN displayed on the Sender device."
+            )
             .setView(container)
             .setPositiveButton("Connect") { _, _ ->
-                val pin = input.text.toString().trim()
-                if (pin.isNotEmpty()) {
-                    connectToSender(ip, pin)
-                } else {
-                    showErrorSnackbar("PIN is required to connect")
+                val pin = pinInput.text.toString().trim()
+                val effectiveSalt = saltHex ?: saltInput?.text?.toString()?.trim()
+                when {
+                    pin.isEmpty() -> showErrorSnackbar("PIN is required")
+                    effectiveSalt.isNullOrEmpty() -> showErrorSnackbar("Session salt is required")
+                    else -> connectToSender(ip, pin, effectiveSalt)
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun connectToSender(ip: String, pin: String) {
+    private fun connectToSender(ip: String, pin: String, saltHex: String) {
         showSuccessSnackbar("Connecting to $ip…")
-        ReceiverForegroundService.connect(requireContext(), ip, pin = pin)
+        ReceiverForegroundService.connect(requireContext(), ip, pin = pin, saltHex = saltHex)
         findNavController().navigate(R.id.action_pairing_to_receiver)
     }
 

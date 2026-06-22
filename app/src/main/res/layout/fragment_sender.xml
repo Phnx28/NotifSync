@@ -81,7 +81,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginBottom="8dp">
+                    android:layout_marginBottom="8dp"
+                    android:gravity="center_vertical">
 
                     <TextView
                         android:layout_width="0dp"
@@ -93,39 +94,117 @@
 
                     <TextView
                         android:id="@+id/tvServerAddress"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="2"
                         android:text="ws://127.0.0.1:8765"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:fontFamily="monospace" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopyIp"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="@string/copy"
+                        android:textColor="@color/green"
+                        android:textSize="11sp" />
+
                 </LinearLayout>
 
+                <!--
+                  v0.2.1 — large, prominent PIN display (AUDIT.md U-02).
+                  Was 13sp monospace; bumped to 40sp bold green so it's
+                  readable from across the room.
+                -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="8dp"
                     android:layout_marginBottom="8dp">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Pairing PIN"
+                        android:text="@string/pairing_pin"
                         android:textColor="@color/text_secondary"
                         android:textSize="13sp" />
 
                     <TextView
                         android:id="@+id/tvPairingPin"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="----"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
+                        android:layout_weight="2"
+                        android:text="------"
+                        android:textColor="@color/green"
+                        android:textSize="40sp"
                         android:textStyle="bold"
-                        android:fontFamily="monospace" />
+                        android:fontFamily="monospace"
+                        android:letterSpacing="0.1" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopyPin"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="@string/copy"
+                        android:textColor="@color/green"
+                        android:textSize="11sp" />
+
+                </LinearLayout>
+
+                <!--
+                  v0.2.1 — session salt row. Required for manual-IP pairing
+                  (the receiver needs the salt to derive the AES key, see
+                  AUDIT.md C-01 / C-04). Read off the sender screen by the
+                  user when entering IP manually.
+                -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/session_salt"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/tvSessionSalt"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="2"
+                        android:text="@string/unknown"
+                        android:textColor="@color/text_primary"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace"
+                        android:maxLines="2"
+                        android:ellipsize="end" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopySalt"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="@string/copy"
+                        android:textColor="@color/green"
+                        android:textSize="11sp" />
 
                 </LinearLayout>
 

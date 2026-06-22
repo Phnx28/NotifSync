@@ -31,4 +31,12 @@ interface NotificationDao {
 
     @Query("SELECT COUNT(*) FROM notifications WHERE status = 'ARCHIVED'")
     fun getArchivedCount(): Flow<Int>
+
+    // v0.2.1 — fix for AUDIT.md I-08: the sender screen was showing the
+    // archived count under the "SMS Relayed" label. Add a real SMS count.
+    @Query("SELECT COUNT(*) FROM notifications WHERE type = 'SMS'")
+    fun getSmsCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE type = 'NOTIFICATION'")
+    fun getNotificationCount(): Flow<Int>
 }
