@@ -42,3 +42,10 @@
 # === EncryptedSharedPreferences (androidx.security) ===
 -keep class androidx.security.crypto.** { *; }
 -keep class com.google.crypto.tink.** { *; }
+# Tink references HTTP / Joda time classes that aren't on the runtime
+# classpath (they're optional). Suppress the warnings so R8 can minify.
+-dontwarn com.google.api.client.http.**
+-dontwarn com.google.api.client.json.**
+-dontwarn com.google.api.client.googleapis.**
+-dontwarn com.google.api.client.**
+-dontwarn org.joda.time.**
