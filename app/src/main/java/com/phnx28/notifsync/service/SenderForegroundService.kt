@@ -1,8 +1,6 @@
 package com.phnx28.notifsync.service
 
-import android.app.AlarmManager
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -10,8 +8,6 @@ import android.net.wifi.WifiManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.phnx28.notifsync.Constants
 import com.phnx28.notifsync.NotifSyncApp
@@ -26,6 +22,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.net.Inet4Address
@@ -55,7 +57,6 @@ class SenderForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         NotificationHelper.createSenderChannel(this)
-
         startForeground(NOTIFICATION_ID, NotificationHelper.buildSenderNotification(this).build())
         startWebSocketServer()
         startEventCollector()
@@ -65,49 +66,51 @@ class SenderForegroundService : Service() {
         return START_STICKY
     }
 
-    // v0.2.1 — `onTaskRemoved` + AlarmManager self-restart removed.
-    // It defeats the user's swipe-away gesture and is a Play-policy violation
-    // (AUDIT.md H-04). START_STICKY is enough for system-initiated restarts.
-
     override fun onDestroy() {
         super.onDestroy()
         eventCollectorJob?.cancel()
         releaseWakeLocks()
         webSocketServer?.stopServer()
         nsdHelper?.tearDown()
-        activePin = null
-        activeSessionSalt = null
-        sessionKey = null
-        connectionCountFlow.value = 0
+        _serverInfoFlow.value = null
+        _clientEventFlow.tryEmit(ClientEvent.ServiceStopped)
         serviceScope.cancel()
     }
 
     private fun startWebSocketServer() {
-        // 6-digit PIN + per-session salt for crypto (AUDIT.md C-01 / C-02).
         val pin = (100_000..999_999).random().toString()
         val salt = Crypto.newSessionSalt()
         val key = Crypto.deriveKey(pin, salt)
 
-        activePin = pin
-        activeSessionSalt = salt
-        sessionKey = key
-        connectionCountFlow.value = 0
+        _serverInfoFlow.value = ServerInfo(
+            pin = pin,
+            saltHex = Crypto.toHex(salt),
+            ipAddress = getLocalIpAddress(),
+            port = Constants.DEFAULT_PORT,
+            connectedClients = 0,
+            isRunning = true
+        )
 
         webSocketServer = WebSocketServer(
             port = Constants.DEFAULT_PORT,
             pin = pin,
             sessionSalt = salt,
             onConnectionChanged = { count ->
-                connectionCountFlow.value = count
+                // Update the server info flow with the new client count.
+                _serverInfoFlow.value?.let { current ->
+                    _serverInfoFlow.value = current.copy(connectedClients = count)
+                }
                 updateForegroundNotification(count)
-                // Hold wakelocks only when there's at least one client
-                // (AUDIT.md H-06).
                 if (count > 0) acquireWakeLocks() else releaseWakeLocks()
+            },
+            onClientConnected = { address ->
+                _clientEventFlow.tryEmit(ClientEvent.ClientConnected(address))
+            },
+            onClientDisconnected = { address ->
+                _clientEventFlow.tryEmit(ClientEvent.ClientDisconnected(address))
             }
         ).apply { startServer() }
 
-        // Publish the salt in the mDNS TXT record so receivers can derive
-        // the same AES key (AUDIT.md C-04).
         nsdHelper = NsdHelper(this).apply {
             registerService(
                 Constants.DEFAULT_PORT,
@@ -122,15 +125,13 @@ class SenderForegroundService : Service() {
         updateForegroundNotification(0)
     }
 
-    /**
-     * Collect events from the in-process EventBus and ship them to all
-     * connected WebSocket clients as encrypted Base64 frames.
-     */
     private fun startEventCollector() {
         eventCollectorJob = serviceScope.launch {
             EventBus.events.collect { json ->
                 try {
-                    val key = sessionKey ?: return@collect
+                    val key = _serverInfoFlow.value?.let { info ->
+                        Crypto.deriveKey(info.pin, Crypto.fromHex(info.saltHex))
+                    } ?: return@collect
                     val payload = Crypto.encryptToBase64(json, key)
                     webSocketServer?.broadcastEvent(payload)
                     saveEventToLocal(json)
@@ -142,7 +143,8 @@ class SenderForegroundService : Service() {
     }
 
     private fun updateForegroundNotification(count: Int) {
-        val pinText = activePin?.let { " | PIN: $it" } ?: ""
+        val pin = _serverInfoFlow.value?.pin
+        val pinText = pin?.let { " | PIN: $it" } ?: ""
         val notification = NotificationHelper.buildSenderNotification(this)
             .setContentText("Running on port ${Constants.DEFAULT_PORT} | Connected: $count$pinText")
             .build()
@@ -156,7 +158,7 @@ class SenderForegroundService : Service() {
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "NotifSync:SenderWakeLock"
-            ).apply { acquire(Constants.WAKELOCK_TIMEOUT_MS) } // AUDIT.md H-05
+            ).apply { acquire(Constants.WAKELOCK_TIMEOUT_MS) }
         }
         if (wifiLock == null) {
             val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -185,24 +187,22 @@ class SenderForegroundService : Service() {
         }
     }
 
+    /** Events emitted to the UI for snackbar feedback. */
+    sealed class ClientEvent {
+        data class ClientConnected(val address: String) : ClientEvent()
+        data class ClientDisconnected(val address: String) : ClientEvent()
+        object ServiceStopped : ClientEvent()
+    }
+
     companion object {
-        @Volatile
-        var activePin: String? = null
-            private set
+        private val _serverInfoFlow = MutableStateFlow<ServerInfo?>(null)
+        val serverInfoFlow: StateFlow<ServerInfo?> = _serverInfoFlow.asStateFlow()
 
-        @Volatile
-        var activeSessionSalt: ByteArray? = null
-            private set
+        private val _clientEventFlow = MutableSharedFlow<ClientEvent>(extraBufferCapacity = 16)
+        val clientEventFlow: SharedFlow<ClientEvent> = _clientEventFlow.asSharedFlow()
 
-        @Volatile
-        private var sessionKey: javax.crypto.spec.SecretKeySpec? = null
+        fun isRunning(): Boolean = _serverInfoFlow.value?.isRunning == true
 
-        val connectionCountFlow = kotlinx.coroutines.flow.MutableStateFlow(0)
-
-        /**
-         * Return the device's primary LAN IPv4 address, preferring `wlan0` /
-         * `eth0` and filtering out VPN / cellular interfaces (AUDIT.md M-12).
-         */
         fun getLocalIpAddress(): String? {
             return try {
                 Collections.list(NetworkInterface.getNetworkInterfaces())

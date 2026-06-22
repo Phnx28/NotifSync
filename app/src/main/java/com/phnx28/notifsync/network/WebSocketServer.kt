@@ -34,6 +34,8 @@ class WebSocketServer(
     private val pin: String,
     private val sessionSalt: ByteArray,
     private val onConnectionChanged: ((Int) -> Unit)? = null,
+    private val onClientConnected: ((String) -> Unit)? = null,
+    private val onClientDisconnected: ((String) -> Unit)? = null,
     private val onMessageSent: (() -> Unit)? = null
 ) : WebSocketServer(InetSocketAddress(port)) {
 
@@ -84,13 +86,17 @@ class WebSocketServer(
 
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
         clients.add(conn)
-        Log.d(TAG, "Client connected: ${conn.remoteSocketAddress}")
+        val addr = conn.remoteSocketAddress?.address?.hostAddress ?: "unknown"
+        Log.d(TAG, "Client connected: $addr (total: ${clients.size})")
+        onClientConnected?.invoke(addr)
         onConnectionChanged?.invoke(clients.size)
     }
 
     override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) {
         clients.remove(conn)
-        Log.d(TAG, "Client disconnected: ${conn.remoteSocketAddress}")
+        val addr = conn.remoteSocketAddress?.address?.hostAddress ?: "unknown"
+        Log.d(TAG, "Client disconnected: $addr (total: ${clients.size})")
+        onClientDisconnected?.invoke(addr)
         onConnectionChanged?.invoke(clients.size)
     }
 

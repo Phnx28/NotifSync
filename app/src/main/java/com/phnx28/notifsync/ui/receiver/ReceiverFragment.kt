@@ -10,13 +10,22 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.google.android.material.tabs.TabLayoutMediator
 import com.phnx28.notifsync.R
 import com.phnx28.notifsync.databinding.FragmentReceiverBinding
+import com.phnx28.notifsync.service.ConnectionState
 import com.phnx28.notifsync.service.ReceiverForegroundService
+import com.phnx28.notifsync.service.SenderForegroundService
+import com.phnx28.notifsync.util.showErrorSnackbar
 import com.phnx28.notifsync.util.showNeutralSnackbar
+import com.phnx28.notifsync.util.showSuccessSnackbar
+import com.phnx28.notifsync.util.showWarningSnackbar
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 
 class ReceiverFragment : Fragment() {
 
     private var _binding: FragmentReceiverBinding? = null
     private val binding get() = _binding!!
+    private var lastState: ConnectionState? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -30,14 +39,9 @@ class ReceiverFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // v0.2.1 — populate the previously-empty `tvFromIp` (AUDIT.md U-01).
-        // The service exposes the last-connected sender IP from its
-        // EncryptedSharedPreferences, but since the service is in the same
-        // process we can read it directly.
-        val senderIp = (requireActivity().applicationContext as? android.app.Application)
-            ?.let { (it as? com.phnx28.notifsync.NotifSyncApp) }
-            ?.let { "—" }  // placeholder; the actual IP is inside the service
-        binding.tvFromIp.text = getString(R.string.from_ip, senderIp ?: "—")
+        // Show the sender IP in the header.
+        val senderIp = ReceiverForegroundService.connectedSenderIp ?: "—"
+        binding.tvFromIp.text = getString(R.string.from_ip, senderIp)
 
         val tabTitles = arrayOf("Active", "Archive")
 
@@ -56,6 +60,56 @@ class ReceiverFragment : Fragment() {
             ReceiverForegroundService.stop(requireContext())
             showNeutralSnackbar("Disconnected from sender")
             findNavController().navigate(R.id.action_receiver_to_home)
+        }
+
+        observeConnectionState()
+    }
+
+    /**
+     * Observe the receiver's connection state and show a snackbar on
+     * transitions. Also updates the header text with the current status.
+     */
+    private fun observeConnectionState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            ReceiverForegroundService.connectionStateFlow.collectLatest { state ->
+                // Suppress the initial IDLE → CONNECTING transition if
+                // we've never been connected (avoids a redundant snackbar
+                // on fragment load).
+                if (lastState != null && lastState != state) {
+                    when (state) {
+                        ConnectionState.CONNECTED -> {
+                            showSuccessSnackbar("Connected to sender")
+                        }
+                        ConnectionState.CONNECTING -> {
+                            // Don't snackbar on connecting — the pairing
+                            // fragment already showed "Connecting to…"
+                        }
+                        ConnectionState.RECONNECTING -> {
+                            showWarningSnackbar("Connection lost — reconnecting…")
+                        }
+                        ConnectionState.FAILED -> {
+                            showErrorSnackbar("Connection failed — check PIN, IP, and salt")
+                        }
+                        ConnectionState.DISCONNECTED -> {
+                            // User-initiated, snackbar already shown by the button
+                        }
+                        ConnectionState.IDLE -> { /* no-op */ }
+                    }
+                }
+                lastState = state
+
+                // Update the header subtitle with the current state.
+                val senderIp = ReceiverForegroundService.connectedSenderIp ?: "—"
+                val statusText = when (state) {
+                    ConnectionState.CONNECTED -> "Connected"
+                    ConnectionState.CONNECTING -> "Connecting…"
+                    ConnectionState.RECONNECTING -> "Reconnecting…"
+                    ConnectionState.FAILED -> "Failed"
+                    ConnectionState.DISCONNECTED -> "Disconnected"
+                    ConnectionState.IDLE -> "Idle"
+                }
+                binding.tvFromIp.text = getString(R.string.from_ip, "$senderIp · $statusText")
+            }
         }
     }
 

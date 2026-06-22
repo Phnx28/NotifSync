@@ -90,6 +90,7 @@ class ReceiverForegroundService : Service() {
     private fun connectToServer(ip: String, port: Int, pin: String, salt: ByteArray) {
         connectionObserverJob?.cancel()
         webSocketClient?.shutdown()
+        connectedSenderIp = ip
 
         webSocketClient = WebSocketClient(
             onEventReceived = { event ->
@@ -98,10 +99,12 @@ class ReceiverForegroundService : Service() {
         )
 
         connectionObserverJob = serviceScope.launch(Dispatchers.Main) {
-            webSocketClient?.isConnected?.collectLatest { connected ->
-                updateNotification(connected)
+            webSocketClient?.connectionState?.collectLatest { state ->
+                _connectionStateFlow.value = state
+                updateNotification(state == ConnectionState.CONNECTED)
                 // Hold wakelocks only when actively connected (AUDIT.md H-06).
-                if (connected) acquireWakeLocks() else releaseWakeLocks()
+                if (state == ConnectionState.CONNECTED) acquireWakeLocks()
+                else releaseWakeLocks()
             }
         }
 
@@ -116,6 +119,8 @@ class ReceiverForegroundService : Service() {
         connectionObserverJob = null
         webSocketClient?.shutdown()
         webSocketClient = null
+        connectedSenderIp = null
+        _connectionStateFlow.value = ConnectionState.DISCONNECTED
     }
 
     private fun acquireWakeLocks() {
@@ -235,6 +240,15 @@ class ReceiverForegroundService : Service() {
         private const val KEY_LAST_PORT = "last_port"
         private const val KEY_LAST_PIN = "last_pin"
         private const val KEY_LAST_SALT = "last_salt"
+
+        /** UI-observable connection state. */
+        private val _connectionStateFlow = kotlinx.coroutines.flow.MutableStateFlow(ConnectionState.IDLE)
+        val connectionStateFlow: kotlinx.coroutines.flow.StateFlow<ConnectionState> = _connectionStateFlow
+
+        /** The IP of the sender we're connected (or trying to connect) to. */
+        @Volatile
+        var connectedSenderIp: String? = null
+            private set
 
         fun connect(context: Context, ip: String, port: Int = Constants.DEFAULT_PORT, pin: String, saltHex: String) {
             val intent = Intent(context, ReceiverForegroundService::class.java).apply {
