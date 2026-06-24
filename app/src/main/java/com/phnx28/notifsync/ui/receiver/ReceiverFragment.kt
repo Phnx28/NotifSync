@@ -30,6 +30,9 @@ class ReceiverFragment : Fragment() {
     private var _binding: FragmentReceiverBinding? = null
     private val binding get() = _binding!!
     private var lastState: ConnectionState? = null
+    /** Tracks whether we've ever reached CONNECTED — prevents misleading
+     *  "Connection lost" message on initial failures (AUDIT.md — v0.2.4). */
+    private var wasEverConnected = false
     private var logSheet: BottomSheetBehavior<*>? = null
 
     override fun onCreateView(
@@ -90,14 +93,22 @@ class ReceiverFragment : Fragment() {
     private fun observeConnectionState() {
         viewLifecycleOwner.lifecycleScope.launch {
             ServiceLocator.connectionRepository.receiverState.collectLatest { state ->
+                if (state == ConnectionState.CONNECTED) wasEverConnected = true
+
                 if (lastState != null && lastState != state) {
                     when (state) {
                         ConnectionState.CONNECTED -> {
                             showSuccessSnackbar("Connected to sender")
                         }
-                        ConnectionState.CONNECTING -> { /* no snackbar */ }
+                        ConnectionState.CONNECTING -> {
+                            showNeutralSnackbar("Connecting…")
+                        }
                         ConnectionState.RECONNECTING -> {
-                            showWarningSnackbar("Connection lost — reconnecting…")
+                            if (wasEverConnected) {
+                                showWarningSnackbar("Connection lost — reconnecting…")
+                            } else {
+                                showNeutralSnackbar("Connection failed — retrying…")
+                            }
                         }
                         ConnectionState.FAILED -> {
                             showErrorSnackbar("Connection failed — check PIN, IP, and salt. Open the log window for details.")

@@ -37,7 +37,10 @@ class WebSocketServer(
     private val onConnectionChanged: ((Int) -> Unit)? = null,
     private val onClientConnected: ((String) -> Unit)? = null,
     private val onClientDisconnected: ((String) -> Unit)? = null,
-    private val onMessageSent: (() -> Unit)? = null
+    private val onMessageSent: (() -> Unit)? = null,
+    /** Called on server-level errors (bind failure, etc.). Added in
+     *  v0.2.4 — previously errors were only logged to logcat. */
+    private val onServerError: ((String) -> Unit)? = null
 ) : WebSocketServer(InetSocketAddress(port)) {
 
     private val clients: MutableSet<WebSocket> = ConcurrentHashMap.newKeySet()
@@ -111,6 +114,11 @@ class WebSocketServer(
 
     override fun onError(conn: WebSocket?, ex: Exception) {
         Log.e(TAG, "WebSocket error", ex)
+        if (conn == null) {
+            // Server-level error (bind failure, etc.) — surface via callback
+            // instead of silently logging (AUDIT.md — v0.2.4 fix).
+            onServerError?.invoke(ex.message ?: "Unknown server error")
+        }
     }
 
     override fun onStart() {

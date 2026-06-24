@@ -109,6 +109,11 @@ class SenderForegroundService : Service() {
             },
             onClientDisconnected = { address ->
                 connRepo.emitSenderEvent(ConnectionRepository.SenderEvent.ClientDisconnected(address))
+            },
+            onServerError = { errorMsg ->
+                AppLog.e(TAG, "Server error: $errorMsg")
+                // Surface to the user via AppLog (the sender fragment
+                // can show the log sheet for details).
             }
         ).apply { startServer() }
 
@@ -197,7 +202,10 @@ class SenderForegroundService : Service() {
             return try {
                 Collections.list(NetworkInterface.getNetworkInterfaces())
                     .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-                    .filter { it.name.startsWith("wlan") || it.name.startsWith("eth") }
+                    // Prefer wlan/eth interfaces but fall back to any
+                    // non-loopback IPv4 (AUDIT.md — v0.2.4 fix: some
+                    // devices use vendor-specific interface names).
+                    .sortedByDescending { it.name.startsWith("wlan") || it.name.startsWith("eth") }
                     .flatMap { Collections.list(it.inetAddresses) }
                     .filterIsInstance<Inet4Address>()
                     .firstOrNull { !it.isLoopbackAddress }

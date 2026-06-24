@@ -222,6 +222,15 @@ class WebSocketClient(
         stableConnectionJob = null
         webSocket?.close(1000, "Client disconnecting")
         webSocket = null
+        // Zero crypto material to prevent heap-dump extraction
+        // (AUDIT.md — v0.2.4 security hardening).
+        sessionKey?.let { key ->
+            try {
+                key.encoded?.fill(0)
+            } catch (_: Exception) { }
+        }
+        sessionKey = null
+        pin = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 

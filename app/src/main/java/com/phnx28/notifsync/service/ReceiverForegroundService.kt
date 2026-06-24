@@ -73,6 +73,23 @@ class ReceiverForegroundService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+            // START_STICKY restart — intent is null. Auto-reconnect from
+            // persisted preferences so the receiver doesn't silently
+            // disconnect after a system kill (AUDIT.md — v0.2.4 fix).
+            null -> {
+                AppLog.i(TAG, "onStartCommand START_STICKY restart — checking persisted connection")
+                val ip = getPersistedIp()
+                val port = getPersistedPort()
+                val pin = getPersistedPin()
+                val saltHex = getPersistedSalt()
+                if (ip != null && pin != null && saltHex != null) {
+                    AppLog.i(TAG, "Reconnecting to $ip from persisted connection")
+                    val salt = saltHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                    connectToServer(ip, port, pin, salt)
+                } else {
+                    AppLog.d(TAG, "No persisted connection — remaining idle")
+                }
+            }
         }
         return START_STICKY
     }
@@ -148,18 +165,22 @@ class ReceiverForegroundService : Service() {
         wifiLock = null
     }
 
-    private fun encryptedPrefs() = androidx.security.crypto.EncryptedSharedPreferences.create(
-        this,
-        PREFS_NAME,
-        androidx.security.crypto.MasterKey.Builder(this)
-            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
-            .build(),
-        androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    /** Lazy-initialized EncryptedSharedPreferences — avoids recreating
+     *  MasterKey + SharedPreferencesImpl on every access (v0.2.4). */
+    private val prefs by lazy {
+        androidx.security.crypto.EncryptedSharedPreferences.create(
+            this,
+            PREFS_NAME,
+            androidx.security.crypto.MasterKey.Builder(this)
+                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+                .build(),
+            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 
     private fun persistConnection(ip: String, port: Int, pin: String, saltHex: String) {
-        encryptedPrefs().edit()
+        prefs.edit()
             .putString(KEY_LAST_IP, ip)
             .putInt(KEY_LAST_PORT, port)
             .putString(KEY_LAST_PIN, pin)
@@ -167,12 +188,13 @@ class ReceiverForegroundService : Service() {
             .apply()
     }
 
-    private fun getPersistedIp(): String? = encryptedPrefs().getString(KEY_LAST_IP, null)
-    private fun getPersistedPin(): String? = encryptedPrefs().getString(KEY_LAST_PIN, null)
-    private fun getPersistedSalt(): String? = encryptedPrefs().getString(KEY_LAST_SALT, null)
+    private fun getPersistedIp(): String? = prefs.getString(KEY_LAST_IP, null)
+    private fun getPersistedPort(): Int = prefs.getInt(KEY_LAST_PORT, Constants.DEFAULT_PORT)
+    private fun getPersistedPin(): String? = prefs.getString(KEY_LAST_PIN, null)
+    private fun getPersistedSalt(): String? = prefs.getString(KEY_LAST_SALT, null)
 
     private fun clearPersistedConnection() {
-        encryptedPrefs().edit()
+        prefs.edit()
             .remove(KEY_LAST_IP).remove(KEY_LAST_PORT)
             .remove(KEY_LAST_PIN).remove(KEY_LAST_SALT)
             .apply()
